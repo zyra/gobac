@@ -1,4 +1,4 @@
-package _type
+package types
 
 const (
 	PROP_ACKED_TRANSITIONS                   PropertyId = 0

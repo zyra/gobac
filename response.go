@@ -1,11 +1,11 @@
-package pdu
+package gobac
 
 import (
+	"bytes"
 	"github.com/kataras/iris/core/errors"
-	"github.com/zyra/bacnet-2/pkg/object"
-	"github.com/zyra/bacnet-2/pkg/pdu/encoder"
-	"github.com/zyra/bacnet-2/pkg/type"
-	"github.com/zyra/bacnet-2/pkg/util"
+	"github.com/zyra/gobac/encoding"
+	"github.com/zyra/gobac/types"
+	"github.com/zyra/gobac/util"
 	"net"
 )
 
@@ -22,7 +22,7 @@ func NewPduResponse(data []byte) *Response {
 		RawData: data,
 	}
 
-	pdu.Pdu.Buffer = NewBuffer(data)
+	pdu.Pdu.Buffer = bytes.NewBuffer(data)
 
 	return pdu
 }
@@ -39,7 +39,7 @@ func (r *Response) DecodeResponse(dest interface{}) error {
 	data = data[:npduLen+4]
 
 	switch funct {
-	case _type.BVLC_ORIGINAL_BROADCAST_NPDU:
+	case types.BVLC_ORIGINAL_BROADCAST_NPDU:
 		for i := uint16(0); i < npduLen; i++ {
 			data[i] = data[4+i]
 		}
@@ -61,8 +61,8 @@ func (r *Response) DecodeResponse(dest interface{}) error {
 
 	metaByte := data[1]
 
-	r.NetworkLayerMessage = metaByte&_type.BIT7 == 1
-	r.ExpectingReply = metaByte&_type.BIT2 == 1
+	r.NetworkLayerMessage = metaByte&types.BIT7 == 1
+	r.ExpectingReply = metaByte&types.BIT2 == 1
 	r.Priority = metaByte & 0x03
 
 	offset = 2
@@ -73,7 +73,7 @@ func (r *Response) DecodeResponse(dest interface{}) error {
 	//var addrLen uint8
 
 	// Check destination
-	if metaByte&_type.BIT5 == 1 {
+	if metaByte&types.BIT5 == 1 {
 		destNet = util.DecodeUnsigned16(data[offset : offset+2])
 		offset += 2
 		addrLen := data[offset]
@@ -82,7 +82,7 @@ func (r *Response) DecodeResponse(dest interface{}) error {
 	}
 
 	// Check source
-	if metaByte&_type.BIT3 == 1 {
+	if metaByte&types.BIT3 == 1 {
 		//srcNet = util.DecodeUnsigned16(data[offset : offset+2])
 		offset += 2
 		addrLen := data[offset]
@@ -102,14 +102,14 @@ func (r *Response) DecodeResponse(dest interface{}) error {
 		nmt := data[offset]
 		offset++
 
-		r.NetworkMessageType = _type.NetworkMessageType(nmt)
+		r.NetworkMessageType = types.NetworkMessageType(nmt)
 
 		if r.NetworkMessageType >= 0x80 {
 			r.VendorID = util.DecodeUnsigned16(data[offset : offset+2])
 			offset += 2
 		}
 	} else {
-		r.NetworkMessageType = _type.NETWORK_MESSAGE_INVALID
+		r.NetworkMessageType = types.NETWORK_MESSAGE_INVALID
 	}
 
 	if r.NetworkLayerMessage {
@@ -126,7 +126,7 @@ func (r *Response) DecodeResponse(dest interface{}) error {
 
 	// TODO implement other pdu types
 	switch pduType {
-	case _type.PDU_TYPE_UNCONFIRMED_SERVICE_REQUEST:
+	case types.PDU_TYPE_UNCONFIRMED_SERVICE_REQUEST:
 		return r.HandleUnconfirmedServiceRequest(choice, request, dest)
 	default:
 		r.Valid = false
@@ -137,9 +137,9 @@ func (r *Response) DecodeResponse(dest interface{}) error {
 func (r *Response) HandleUnconfirmedServiceRequest(choice byte, request []byte, dest interface{}) error {
 	switch choice {
 	// TODO implement other service choices
-	case _type.SERVICE_UNCONFIRMED_I_AM:
-		req := encoder.IAmServiceRequest(request)
-		if ok := dest.(*object.Device); ok != nil {
+	case types.SERVICE_UNCONFIRMED_I_AM:
+		req := encoding.IAmServiceRequest(request)
+		if ok := dest.(*Device); ok != nil {
 			return req.Decode(ok)
 		} else {
 			return errors.New("Invalid dest type passed")

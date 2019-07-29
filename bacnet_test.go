@@ -1,21 +1,20 @@
-package bacnet
+package gobac
 
 import (
 	"fmt"
-	"github.com/zyra/bacnet-2/pkg/object"
-	"github.com/zyra/bacnet-2/pkg/service"
-	_type "github.com/zyra/bacnet-2/pkg/type"
+	"github.com/zyra/gobac/service"
+	_type "github.com/zyra/gobac/types"
 	"testing"
 )
 
-var devices *[]*object.Device
-var device *object.Device
-var objects *[]*object.Object
+var devices *[]*Device
+var device *Device
+var objects *[]*Object
 var ifname = "docker0"
 var err error
 
 func TestScan(t *testing.T) {
-	devices, err = service.SendWhoIsRequest(ifname)
+	devices, err = SendWhoIsRequest(ifname)
 
 	if err != nil {
 		t.Error(err)

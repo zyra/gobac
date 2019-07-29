@@ -1,9 +1,7 @@
-package service
+package gobac
 
 import (
 	"fmt"
-	"github.com/zyra/bacnet-2/pkg/object"
-	"github.com/zyra/bacnet-2/pkg/pdu"
 	"time"
 )
 
@@ -11,11 +9,11 @@ type Res struct{}
 
 type whoIsRequest struct {
 	*baseService
-	devices *[]*object.Device
+	devices *[]*Device
 }
 
 // Broadcasts a whois to the network
-func SendWhoIsRequest(ifname string) (*[]*object.Device, error) {
+func SendWhoIsRequest(ifname string) (*[]*Device, error) {
 	var instanceMin uint32 = 0
 	var instanceMax uint32 = 0x3FFFFF
 
@@ -27,7 +25,7 @@ func SendWhoIsRequest(ifname string) (*[]*object.Device, error) {
 		req.baseService = baseService
 	}
 
-	devices := make([]*object.Device, 0)
+	devices := make([]*Device, 0)
 	req.devices = &devices
 
 	req.request.EncodeWhoIsApdu(instanceMin, instanceMax)
@@ -35,7 +33,7 @@ func SendWhoIsRequest(ifname string) (*[]*object.Device, error) {
 
 	req.receiver.Timeout = time.Second * 3
 
-	c := make(chan pdu.Response)
+	c := make(chan Response)
 	req.receiver.Receive(c)
 
 Loop:
@@ -55,11 +53,11 @@ Loop:
 	return req.devices, nil
 }
 
-func (r *whoIsRequest) handle(v pdu.Response) {
+func (r *whoIsRequest) handle(v Response) {
 	r.waitGroup.Add(1)
-	go func(r *whoIsRequest, v pdu.Response) {
+	go func(r *whoIsRequest, v Response) {
 		fmt.Println("Processing iAm response")
-		device := object.NewDevice()
+		device := NewDevice()
 
 		if err := v.DecodeResponse(device); err != nil {
 			fmt.Println("error decoding response", err)

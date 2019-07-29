@@ -1,8 +1,7 @@
-package service
+package gobac
 
 import (
-	"github.com/zyra/bacnet-2/pkg/pdu"
-	"github.com/zyra/bacnet-2/pkg/util"
+	"github.com/zyra/gobac/util"
 	"sync"
 )
 
@@ -11,8 +10,8 @@ type baseService struct {
 	waitGroup sync.WaitGroup
 	ifname    string
 	ipHelper  *util.IPHelper
-	request   *pdu.Request
-	receiver  *pdu.Receiver
+	request   *Request
+	receiver  *Receiver
 	invokeId  uint8
 }
 
@@ -28,14 +27,14 @@ func newBaseService(ifname string) (*baseService, error) {
 		ipHelper: ipHelper,
 	}
 
-	req := pdu.NewRequest()
+	req := NewRequest()
 	req.Source = ipHelper.IPv4
 	req.SourcePort = 0xBAC0
 	req.Target = ipHelper.BroadcastIPv4
 	req.TargetPort = 0xBAC0
 	req.EncodeNpdu()
 
-	rec := pdu.NewPduReceiver(req.Source, req.SourcePort)
+	rec := NewPduReceiver(req.Source, req.SourcePort)
 	rec.Target = req.Target
 	rec.TargetPort = req.TargetPort
 

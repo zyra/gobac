@@ -1,15 +1,14 @@
-package object
+package gobac
 
 import (
-	"github.com/zyra/bacnet-2/pkg/service"
-	_type "github.com/zyra/bacnet-2/pkg/type"
+	"github.com/zyra/gobac/types"
 )
 
 type Property struct {
-	ID        _type.PropertyId
+	ID        types.PropertyId
 	Index     uint32
 	Value     interface{}
-	ValueType _type.ApplicationTag
+	ValueType types.ApplicationTag
 	Object    *Object
 }
 
@@ -18,7 +17,7 @@ func (p *Property) ReadValue(dest interface{}) {
 }
 
 func (p *Property) GetValue() error {
-	return service.SendReadPropertyRequest(p.Object.Device, p.ID, p)
+	return SendReadPropertyRequest(p.Object.Device, p.ID, p)
 }
 
 func (p *Property) SetValue(interface{}) error {

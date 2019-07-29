@@ -1,9 +1,11 @@
-package pdu
+package gobac
 
 import (
+	"bytes"
 	"fmt"
-	"github.com/zyra/bacnet-2/pkg/type"
-	"github.com/zyra/bacnet-2/pkg/util"
+	"github.com/zyra/gobac/encoding"
+	"github.com/zyra/gobac/types"
+	"github.com/zyra/gobac/util"
 	"net"
 )
 
@@ -21,49 +23,48 @@ type Request struct {
 func (d *Request) EncodeNpdu() {
 	var b byte
 
-	d.Append(d.ProtocolVersion)
+	_ = encoding.AppendByte(d.Buffer, d.ProtocolVersion)
 
 	b = 0
 
 	if d.NetworkLayerMessage {
-		b |= _type.BIT7
+		b |= types.BIT7
 	}
 
-	b |= _type.BIT5
+	b |= types.BIT5
 
 	if d.ExpectingReply {
-		b |= _type.BIT2
+		b |= types.BIT2
 	}
 
 	b |= d.Priority & 0x03
 
-	d.Append(b)
-
-	d.EncodeUnsigned16(65535)
-	d.Append(0)
-	d.Append(d.HopCount)
+	_ = encoding.AppendByte(d.Buffer, b)
+	_ = encoding.EncodeUnsigned16(d.Buffer, 65535)
+	_ = encoding.AppendByte(d.Buffer, 0)
+	_ = encoding.AppendByte(d.Buffer, d.HopCount)
 
 	if d.NetworkLayerMessage {
 		if d.NetworkMessageType > 255 {
 			panic("Invalid message type")
 		}
 
-		d.Append(byte(d.NetworkMessageType))
+		_ = encoding.AppendByte(d.Buffer, byte(d.NetworkMessageType))
 
 		if d.NetworkMessageType >= 0x80 {
-			d.Append(
-				byte((d.VendorID&0xff00)>>8),
-				byte(d.VendorID&0x00ff),
-			)
+			_ = encoding.AppendBytes(d.Buffer, []byte{
+				byte((d.VendorID & 0xff00) >> 8),
+				byte(d.VendorID & 0x00ff),
+			})
 		}
 	}
 }
 
 func (d *Request) EncodeWhoIsApdu(minInstance, maxInstance uint32) {
-	d.Append(
-		_type.PDU_TYPE_UNCONFIRMED_SERVICE_REQUEST,
-		_type.SERVICE_UNCONFIRMED_WHO_IS,
-	)
+	_ = encoding.AppendBytes(d.Buffer, []byte{
+		types.PDU_TYPE_UNCONFIRMED_SERVICE_REQUEST,
+		types.SERVICE_UNCONFIRMED_WHO_IS,
+	})
 
 	//d.EncodeContext(0, minInstance)
 	//d.EncodeContext(1, maxInstance)
@@ -82,20 +83,21 @@ func (d *Request) EncodeContext(tag uint8, value uint32) {
 		tagLen = 4
 	}
 
-	d.EncodeTag(tag, true, tagLen)
-	d.EncodeUnsigned(value)
+	_ = encoding.EncodeTag(d.Buffer, tag, true, tagLen)
+	_ = encoding.EncodeUnsigned(d.Buffer, value)
 }
 
 func (d *Request) Send() {
-	buff := NewBuffer()
-
-	buff.Append(0x81, _type.BVLC_ORIGINAL_BROADCAST_NPDU)
-	buff.EncodeUnsigned16(uint16(d.Len()) + 4)
-	buff.AppendArray(d.Bytes())
+	b := make([]byte, 0)
+	b[0] = 0x81
+	b[1] = types.BVLC_ORIGINAL_BROADCAST_NPDU
+	buff := bytes.NewBuffer(b)
+	_ = encoding.EncodeUnsigned16(buff, uint16(d.Len())+4)
+	_ = encoding.AppendBytes(buff, d.Bytes())
 	d.SendMDPU(buff)
 }
 
-func (d *Request) SendMDPU(mtu *Buffer) {
+func (d *Request) SendMDPU(mtu *bytes.Buffer) {
 	srcUdp := util.GetUdpAddr(d.Source, d.SourcePort)
 	destUdp := util.GetUdpAddr(d.Target, d.TargetPort)
 

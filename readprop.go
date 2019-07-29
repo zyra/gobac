@@ -1,17 +1,17 @@
-package service
+package gobac
 
 import (
-	"github.com/zyra/bacnet-2/pkg/object"
-	_type "github.com/zyra/bacnet-2/pkg/type"
+	"fmt"
+	"github.com/zyra/gobac/types"
 )
 
 type readPropertyRequest struct {
 	*baseService
-	propertyId _type.PropertyId
+	propertyId types.PropertyId
 	dest       interface{}
 }
 
-func SendReadPropertyRequest(device *object.Device, propertyId _type.PropertyId, dest *object.Property) error {
+func SendReadPropertyRequest(device *Device, propertyId types.PropertyId, dest *Property) error {
 	s, e := newBaseService(device.OriginInterface)
 
 	if e != nil {
@@ -24,7 +24,7 @@ func SendReadPropertyRequest(device *object.Device, propertyId _type.PropertyId,
 		propertyId:  propertyId,
 	}
 
-
+	fmt.Println(req)
 
 	return nil
 }

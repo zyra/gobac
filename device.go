@@ -1,7 +1,7 @@
-package object
+package gobac
 
 import (
-	_type "github.com/zyra/bacnet-2/pkg/type"
+	"github.com/zyra/gobac/types"
 	"net"
 )
 
@@ -13,7 +13,7 @@ type Device struct {
 	MaxAPDU         uint32
 	OriginInterface string
 	VendorID        uint16
-	Segmentation    _type.BACNET_SEGMENTATION
+	Segmentation    types.BACNET_SEGMENTATION
 }
 
 func NewDevice() *Device {
@@ -25,7 +25,7 @@ func NewDevice() *Device {
 
 func (d *Device) GetObjects() (*[]*Object, error) {
 	objects := make([]*Object, 0)
-	prop, err := d.GetProperty(_type.PROP_OBJECT_LIST, 0)
+	prop, err := d.GetProperty(types.PROP_OBJECT_LIST, 0)
 
 	if err != nil {
 		return nil, err

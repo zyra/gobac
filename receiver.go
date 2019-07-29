@@ -1,9 +1,9 @@
-package pdu
+package gobac
 
 import (
 	"fmt"
-	_type "github.com/zyra/bacnet-2/pkg/type"
-	"github.com/zyra/bacnet-2/pkg/util"
+	"github.com/zyra/gobac/types"
+	"github.com/zyra/gobac/util"
 	"net"
 	"time"
 )
@@ -95,7 +95,7 @@ func (d *Receiver) close() {
 }
 
 func (d *Receiver) receive() {
-	b := make([]byte, _type.MAX_MPDU)
+	b := make([]byte, types.MAX_MPDU)
 	if l, addr, err := d.conn.ReadFromUDP(b[:]); err != nil {
 		if !d.suppressErrors {
 			fmt.Println("Error reading from UDP", err)

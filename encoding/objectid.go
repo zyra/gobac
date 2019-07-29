@@ -1,8 +1,8 @@
-package util
+package encoding
 
 import (
 	"bytes"
-	_type "github.com/zyra/bacnet-2/pkg/type"
+	_type "github.com/zyra/gobac/types"
 )
 
 func DecodeObjectId(buf *bytes.Buffer) (objectType uint32, objectInstance uint32) {

@@ -1,7 +1,7 @@
-package object
+package gobac
 
 import (
-	_type "github.com/zyra/bacnet-2/pkg/type"
+	_type "github.com/zyra/gobac/types"
 )
 
 type Object struct {

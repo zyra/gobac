@@ -1,5 +1,4 @@
-package _type
-
+package types
 
 const BIT0 = 0x01
 const BIT1 = 0x02

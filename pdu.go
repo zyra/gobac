@@ -1,12 +1,13 @@
-package pdu
+package gobac
 
 import (
-	"github.com/zyra/bacnet-2/pkg/type"
+	"bytes"
+	"github.com/zyra/gobac/types"
 	"net"
 )
 
 type Pdu struct {
-	*Buffer
+	*bytes.Buffer
 	Source              *net.IP
 	SourcePort          uint16
 	Target              *net.IP
@@ -14,20 +15,21 @@ type Pdu struct {
 	ProtocolVersion     uint8
 	ExpectingReply      bool
 	NetworkLayerMessage bool
-	Priority            _type.MessagePriority
-	NetworkMessageType  _type.NetworkMessageType
+	Priority            types.MessagePriority
+	NetworkMessageType  types.NetworkMessageType
 	VendorID            uint16
 	HopCount            uint8
 }
 
 func NewPdu() *Pdu {
+	b := make([]byte, 0)
 	return &Pdu{
-		Buffer:              NewBuffer(),
+		Buffer:              bytes.NewBuffer(b),
 		ProtocolVersion:     1,
 		ExpectingReply:      false,
 		NetworkLayerMessage: false,
-		Priority:            _type.MESSAGE_PRIORITY_NORMAL,
-		NetworkMessageType:  _type.NETWORK_MESSAGE_INVALID,
+		Priority:            types.MESSAGE_PRIORITY_NORMAL,
+		NetworkMessageType:  types.NETWORK_MESSAGE_INVALID,
 		VendorID:            0,
 		HopCount:            255,
 	}
