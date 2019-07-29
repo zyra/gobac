@@ -1,49 +1,32 @@
 package gobac
 
 import (
-	"github.com/zyra/gobac/util"
 	"sync"
 )
 
-type baseService struct {
-	mutex     sync.RWMutex
-	waitGroup sync.WaitGroup
-	ifname    string
-	ipHelper  *util.IPHelper
-	request   *Request
-	receiver  *Receiver
-	invokeId  uint8
+type Rcv struct {
 }
 
-func newBaseService(ifname string) (*baseService, error) {
-	ipHelper, err := util.NewIPHelper(ifname)
+type serviceRequest struct {
+	mutex              sync.RWMutex
+	waitGroup          sync.WaitGroup
+	request            *Request
+	transaction        *Transaction
+	TransactionHandler TransactionHandler
+	server             *Server
+}
 
-	if err != nil {
-		return nil, err
-	}
-
-	s := &baseService{
-		ifname:   ifname,
-		ipHelper: ipHelper,
-	}
-
-	req := NewRequest()
-	req.Source = ipHelper.IPv4
-	req.SourcePort = 0xBAC0
-	req.Target = ipHelper.BroadcastIPv4
-	req.TargetPort = 0xBAC0
+func newServiceRequest(s *Server) *serviceRequest {
+	req := NewRequest(s)
 	req.EncodeNpdu()
-
-	rec := NewPduReceiver(req.Source, req.SourcePort)
-	rec.Target = req.Target
-	rec.TargetPort = req.TargetPort
-
-	s.request = req
-	s.receiver = rec
-
-	return s, nil
+	return &serviceRequest{
+		request: req,
+		server:  s,
+	}
 }
 
-func setInvokeId() {
-
+func newConfirmedServiceRequest(s *Server, handler TransactionHandler) *serviceRequest {
+	sr := newServiceRequest(s)
+	sr.transaction = NewTransaction(handler)
+	return sr
 }

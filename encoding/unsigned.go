@@ -2,32 +2,50 @@ package encoding
 
 import "bytes"
 
-func AppendBytes(buf *bytes.Buffer, bytes []byte) error {
+type Buffer struct {
+	*bytes.Buffer
+}
+
+func NewBuffer(data ...[]byte) *Buffer {
+	var b []byte
+
+	if len(data) == 1 {
+		b = data[0]
+	} else {
+		b = make([]byte, 0)
+	}
+
+	return &Buffer{
+		Buffer: bytes.NewBuffer(b),
+	}
+}
+
+func (buf *Buffer) AppendBytes(bytes []byte) error {
 	_, err := buf.Write(bytes)
 	return err
 }
 
-func AppendByte(buf *bytes.Buffer, b byte) error {
-	return AppendBytes(buf, []byte{b})
+func (buf *Buffer) AppendByte(b byte) error {
+	return buf.AppendBytes([]byte{b})
 }
 
-func EncodeUnsigned16(buf *bytes.Buffer, value uint16) error {
+func (buf *Buffer) EncodeUnsigned16(value uint16) error {
 	b := make([]byte, 2)
 	b[0] = byte(value & 0xff00 >> 8)
 	b[1] = byte(value & 0x00ff)
 
-	return AppendBytes(buf, b)
+	return buf.AppendBytes(b)
 }
 
-func EncodeUnsigned24(buf *bytes.Buffer, value uint32) error {
+func (buf *Buffer) EncodeUnsigned24(value uint32) error {
 	b := make([]byte, 3)
 	b[0] = byte(value & 0xff0000 >> 16)
 	b[1] = byte(value & 0x00ff00 >> 8)
 	b[2] = byte(value & 0x0000ff)
-	return AppendBytes(buf, b)
+	return buf.AppendBytes(b)
 }
 
-func EncodeUnsigned32(buf *bytes.Buffer, value uint32) error {
+func (buf *Buffer) EncodeUnsigned32(value uint32) error {
 	b := make([]byte, 4)
 
 	b[0] = byte((value & 0xff000000) >> 24)
@@ -35,21 +53,20 @@ func EncodeUnsigned32(buf *bytes.Buffer, value uint32) error {
 	b[2] = byte((value & 0x0000ff00) >> 8)
 	b[4] = byte(value & 0x000000ff)
 
-	return AppendBytes(buf, b)
+	return buf.AppendBytes(b)
 }
 
-func EncodeUnsigned(buf *bytes.Buffer, value uint32) error {
+func (buf *Buffer) EncodeUnsigned(value uint32) error {
 	if value < 0x100 {
-		return AppendByte(buf, uint8(value))
+		return buf.AppendByte(uint8(value))
 	} else if value < 0x10000 {
-		return EncodeUnsigned16(buf, uint16(value))
+		return buf.EncodeUnsigned16(uint16(value))
 	} else if value < 0x1000000 {
-		return EncodeUnsigned24(buf, value)
+		return buf.EncodeUnsigned24(value)
 	} else {
-		return EncodeUnsigned32(buf, value)
+		return buf.EncodeUnsigned32(value)
 	}
 }
-
 
 // Decodes unsigned 16 value
 // Takes 2 bytes
@@ -80,7 +97,7 @@ func DecodeUnsigned32(data []byte) (val uint32) {
 }
 
 // Decodes unsigned value
-func DecodeUnsigned(buf *bytes.Buffer, lenValue uint32) (val uint32) {
+func (buf *Buffer) DecodeUnsigned(lenValue uint32) (val uint32) {
 	switch lenValue {
 	case 1:
 		return uint32(buf.Next(1)[0])

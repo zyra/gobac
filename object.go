@@ -1,7 +1,7 @@
 package gobac
 
 import (
-	_type "github.com/zyra/gobac/types"
+	"github.com/zyra/gobac/types"
 )
 
 type Object struct {
@@ -11,7 +11,7 @@ type Object struct {
 	IsDevice bool
 }
 
-func (o *Object) GetProperty(id _type.PropertyId, index uint32) (*Property, error) {
+func (o *Object) GetProperty(id types.PropertyId, index uint32) (*Property, error) {
 	prop := &Property{
 		Object: o,
 		Index:  index,

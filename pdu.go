@@ -1,13 +1,13 @@
 package gobac
 
 import (
-	"bytes"
+	"github.com/zyra/gobac/encoding"
 	"github.com/zyra/gobac/types"
 	"net"
 )
 
 type Pdu struct {
-	*bytes.Buffer
+	*encoding.Buffer
 	Source              *net.IP
 	SourcePort          uint16
 	Target              *net.IP
@@ -22,9 +22,8 @@ type Pdu struct {
 }
 
 func NewPdu() *Pdu {
-	b := make([]byte, 0)
 	return &Pdu{
-		Buffer:              bytes.NewBuffer(b),
+		Buffer:              encoding.NewBuffer(),
 		ProtocolVersion:     1,
 		ExpectingReply:      false,
 		NetworkLayerMessage: false,

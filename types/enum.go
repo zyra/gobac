@@ -1247,7 +1247,7 @@ const (
 	MAX_ConfirmedService                                            = 30
 )
 
-type ConfirmedService = uint32
+type ConfirmedService = uint8
 
 const (
 	SERVICE_UNCONFIRMED_I_AM                     UnconfirmedService = 0

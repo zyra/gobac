@@ -17,7 +17,8 @@ func (p *Property) ReadValue(dest interface{}) {
 }
 
 func (p *Property) GetValue() error {
-	return SendReadPropertyRequest(p.Object.Device, p.ID, p)
+	return nil
+	//return SendReadPropertyRequest(p.Object.Device, p.ID, p)
 }
 
 func (p *Property) SetValue(interface{}) error {

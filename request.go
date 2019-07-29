@@ -1,29 +1,34 @@
 package gobac
 
 import (
-	"bytes"
 	"fmt"
 	"github.com/zyra/gobac/encoding"
 	"github.com/zyra/gobac/types"
-	"github.com/zyra/gobac/util"
-	"net"
 )
 
-func NewRequest() *Request {
-	d := &Request{
-		Pdu: NewPdu(),
+func NewRequest(s *Server) *Request {
+	req := &Request{
+		Pdu:    NewPdu(),
+		Server: s,
 	}
-	return d
+
+	req.Source = s.IPv4
+	req.SourcePort = s.ServerPort
+	req.Target = s.BroadcastIPv4
+	req.TargetPort = s.BroadcastPort
+
+	return req
 }
 
 type Request struct {
 	*Pdu
+	Server *Server
 }
 
 func (d *Request) EncodeNpdu() {
 	var b byte
 
-	_ = encoding.AppendByte(d.Buffer, d.ProtocolVersion)
+	_ = d.AppendByte(d.ProtocolVersion)
 
 	b = 0
 
@@ -39,20 +44,24 @@ func (d *Request) EncodeNpdu() {
 
 	b |= d.Priority & 0x03
 
-	_ = encoding.AppendByte(d.Buffer, b)
-	_ = encoding.EncodeUnsigned16(d.Buffer, 65535)
-	_ = encoding.AppendByte(d.Buffer, 0)
-	_ = encoding.AppendByte(d.Buffer, d.HopCount)
+	_ = d.AppendByte(b)
+
+	// Broadcast
+	_ = d.EncodeUnsigned16(65535)
+
+	_ = d.AppendByte(0)
+
+	_ = d.AppendByte(d.HopCount)
 
 	if d.NetworkLayerMessage {
 		if d.NetworkMessageType > 255 {
 			panic("Invalid message type")
 		}
 
-		_ = encoding.AppendByte(d.Buffer, byte(d.NetworkMessageType))
+		_ = d.AppendByte(byte(d.NetworkMessageType))
 
 		if d.NetworkMessageType >= 0x80 {
-			_ = encoding.AppendBytes(d.Buffer, []byte{
+			_ = d.AppendBytes([]byte{
 				byte((d.VendorID & 0xff00) >> 8),
 				byte(d.VendorID & 0x00ff),
 			})
@@ -61,7 +70,7 @@ func (d *Request) EncodeNpdu() {
 }
 
 func (d *Request) EncodeWhoIsApdu(minInstance, maxInstance uint32) {
-	_ = encoding.AppendBytes(d.Buffer, []byte{
+	_ = d.AppendBytes([]byte{
 		types.PDU_TYPE_UNCONFIRMED_SERVICE_REQUEST,
 		types.SERVICE_UNCONFIRMED_WHO_IS,
 	})
@@ -83,34 +92,25 @@ func (d *Request) EncodeContext(tag uint8, value uint32) {
 		tagLen = 4
 	}
 
-	_ = encoding.EncodeTag(d.Buffer, tag, true, tagLen)
-	_ = encoding.EncodeUnsigned(d.Buffer, value)
+	_ = d.EncodeTag(tag, true, tagLen)
+	_ = d.EncodeUnsigned(value)
 }
 
 func (d *Request) Send() {
-	b := make([]byte, 0)
-	b[0] = 0x81
-	b[1] = types.BVLC_ORIGINAL_BROADCAST_NPDU
-	buff := bytes.NewBuffer(b)
-	_ = encoding.EncodeUnsigned16(buff, uint16(d.Len())+4)
-	_ = encoding.AppendBytes(buff, d.Bytes())
+	buff := encoding.NewBuffer()
+
+	_ = buff.AppendByte(0x81)
+	_ = buff.AppendByte(types.BVLC_ORIGINAL_BROADCAST_NPDU)
+	_ = buff.EncodeUnsigned16(uint16(d.Len()) + 4)
+	_ = buff.AppendBytes(d.Bytes())
+
 	d.SendMDPU(buff)
 }
 
-func (d *Request) SendMDPU(mtu *bytes.Buffer) {
-	srcUdp := util.GetUdpAddr(d.Source, d.SourcePort)
-	destUdp := util.GetUdpAddr(d.Target, d.TargetPort)
+func (d *Request) SendMDPU(mtu *encoding.Buffer) {
+	destUdp := getUdpAddr(d.Target, d.TargetPort)
 
-	if conn, err := net.DialUDP("udp", srcUdp, destUdp); err != nil {
-		fmt.Println("Error dialing UDP", err)
-	} else {
-		defer func() {
-			if err := conn.Close(); err != nil {
-				fmt.Println("Error closing UDP connection", err)
-			}
-		}()
-		if _, err := conn.Write(mtu.Bytes()); err != nil {
-			fmt.Println("Error sending MDPU", err)
-		}
+	if err := d.Server.SendMPDU(mtu, destUdp); err != nil {
+		fmt.Println("Error sending MDPU", err)
 	}
 }

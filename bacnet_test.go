@@ -2,33 +2,48 @@ package gobac
 
 import (
 	"fmt"
-	"github.com/zyra/gobac/service"
-	_type "github.com/zyra/gobac/types"
 	"testing"
 )
 
-var devices *[]*Device
+var server *Server
+var devices = make([]*Device, 0)
 var device *Device
-var objects *[]*Object
+var objects []*Object
 var ifname = "docker0"
 var err error
 
-func TestScan(t *testing.T) {
-	devices, err = SendWhoIsRequest(ifname)
+func TestNewServer(t *testing.T) {
+	server, err = NewServer(ifname)
 
 	if err != nil {
 		t.Error(err)
 		t.FailNow()
 	}
 
-	dLen := len(*devices)
+	if server.InterfaceName != ifname {
+		t.Errorf("expected interface name to be %s and got %s\n", ifname, server.InterfaceName)
+		t.FailNow()
+	}
+
+	server.Listen()
+}
+
+func TestScan(t *testing.T) {
+	err = server.WhoIs(&devices)
+
+	if err != nil {
+		t.Error(err)
+		t.FailNow()
+	}
+
+	dLen := len(devices)
 
 	if dLen <= 0 {
 		t.Error("No devices found")
 		t.FailNow()
 	}
 
-	device = (*devices)[0]
+	device = devices[0]
 }
 
 func TestObjects(t *testing.T) {
@@ -36,11 +51,9 @@ func TestObjects(t *testing.T) {
 		t.FailNow()
 	}
 
-	objects, err = service.ReadProperty(device, _type.PROP_OBJECT_LIST)
-
 	if err != nil {
 		fmt.Println("Error!", err)
 	}
 
-	fmt.Println(len(*objects))
+	fmt.Println(len(objects))
 }

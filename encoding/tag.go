@@ -1,8 +1,6 @@
 package encoding
 
-import "bytes"
-
-func EncodeTag(buf *bytes.Buffer, tag uint8, contextSpecific bool, lenValueType uint32) error {
+func (buf *Buffer) EncodeTag(tag uint8, contextSpecific bool, lenValueType uint32) error {
 	b := []byte{0}
 	var err error
 
@@ -27,22 +25,22 @@ func EncodeTag(buf *bytes.Buffer, tag uint8, contextSpecific bool, lenValueType 
 		} else if lenValueType <= 65535 {
 			b[1] = 254
 			defer func() {
-				err = EncodeUnsigned16(buf, uint16(lenValueType))
+				err = buf.EncodeUnsigned16(uint16(lenValueType))
 			}()
 		} else {
 			b[1] = 255
 			defer func() {
-				err = EncodeUnsigned(buf, lenValueType)
+				err = buf.EncodeUnsigned(lenValueType)
 			}()
 		}
 	}
 
-	err = AppendBytes(buf, b)
+	err = buf.AppendBytes(b)
 
 	return err
 }
 
-func DecodeTag(buf *bytes.Buffer) (tagNumber uint8, lenValue uint32) {
+func (buf *Buffer) DecodeTag() (tagNumber uint8, lenValue uint32) {
 	b1, _ := buf.ReadByte()
 
 	if (b1 & 0xF0) == 0xF0 {
@@ -52,7 +50,7 @@ func DecodeTag(buf *bytes.Buffer) (tagNumber uint8, lenValue uint32) {
 		tagNumber = b1 >> 4
 	}
 
-	if b1 & 0x07 == 5 {
+	if b1&0x07 == 5 {
 		n := buf.Bytes()[0]
 		switch n {
 		case 255:

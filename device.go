@@ -17,7 +17,9 @@ type Device struct {
 }
 
 func NewDevice() *Device {
-	var d Device
+	d := Device{
+		Object: &Object{},
+	}
 	d.IsDevice = true
 	d.Device = &d
 	return &d

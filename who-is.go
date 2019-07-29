@@ -2,67 +2,60 @@ package gobac
 
 import (
 	"fmt"
+	"github.com/zyra/gobac/types"
+	"sync"
 	"time"
 )
 
-type Res struct{}
-
 type whoIsRequest struct {
-	*baseService
-	devices *[]*Device
+	*serviceRequest
+	devices   *[]*Device
+	mutex     sync.RWMutex
+	waitGroup sync.WaitGroup
 }
 
-// Broadcasts a whois to the network
-func SendWhoIsRequest(ifname string) (*[]*Device, error) {
+func (s *Server) WhoIs(dest *[]*Device) error {
 	var instanceMin uint32 = 0
 	var instanceMax uint32 = 0x3FFFFF
 
-	req := &whoIsRequest{}
-
-	if baseService, err := newBaseService(ifname); err != nil {
-		return nil, err
-	} else {
-		req.baseService = baseService
+	req := &whoIsRequest{
+		devices:        dest,
+		serviceRequest: newServiceRequest(s),
 	}
-
-	devices := make([]*Device, 0)
-	req.devices = &devices
 
 	req.request.EncodeWhoIsApdu(instanceMin, instanceMax)
 	req.request.Send()
 
-	req.receiver.Timeout = time.Second * 3
+	tc, c, h := getChanHandlerWithTimeout(time.Second * 5)
 
-	c := make(chan Response)
-	req.receiver.Receive(c)
+	s.setUnconfirmedHandler(types.SERVICE_UNCONFIRMED_I_AM, h)
 
 Loop:
 	for {
 		select {
-		case v := <-c:
-			req.handle(v)
-			continue
-
-		case <-req.receiver.Done:
+		case <-tc:
 			break Loop
+		case data := <-c:
+			req.handle(data)
+			continue
 		}
 	}
 
 	req.waitGroup.Wait()
 
-	return req.devices, nil
+	return nil
 }
 
-func (r *whoIsRequest) handle(v Response) {
+func (r *whoIsRequest) handle(v *Response) {
 	r.waitGroup.Add(1)
-	go func(r *whoIsRequest, v Response) {
-		fmt.Println("Processing iAm response")
+	go func(r *whoIsRequest, v *Response) {
 		device := NewDevice()
+		req := IAmServiceRequest(v.Message.Bytes())
 
-		if err := v.DecodeResponse(device); err != nil {
+		if err := req.Decode(device); err != nil {
 			fmt.Println("error decoding response", err)
 		} else {
-			device.OriginInterface = r.ifname
+			device.OriginInterface = r.server.InterfaceName
 			device.IPAddress = &v.Sender.IP
 			r.mutex.Lock()
 			*r.devices = append(*r.devices, device)
@@ -70,6 +63,5 @@ func (r *whoIsRequest) handle(v Response) {
 		}
 
 		r.waitGroup.Done()
-		fmt.Println("Processed iAm response!")
 	}(r, v)
 }

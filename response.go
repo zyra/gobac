@@ -1,11 +1,9 @@
 package gobac
 
 import (
-	"bytes"
 	"github.com/kataras/iris/core/errors"
 	"github.com/zyra/gobac/encoding"
 	"github.com/zyra/gobac/types"
-	"github.com/zyra/gobac/util"
 	"net"
 )
 
@@ -14,6 +12,9 @@ type Response struct {
 	RawData []byte
 	Valid   bool
 	Sender  *net.UDPAddr
+	PduType types.PduType
+	Message *encoding.Buffer
+	Choice  byte
 }
 
 func NewPduResponse(data []byte) *Response {
@@ -22,12 +23,12 @@ func NewPduResponse(data []byte) *Response {
 		RawData: data,
 	}
 
-	pdu.Pdu.Buffer = bytes.NewBuffer(data)
+	pdu.Pdu.Buffer = encoding.NewBuffer(data)
 
 	return pdu
 }
 
-func (r *Response) DecodeResponse(dest interface{}) error {
+func (r *Response) Decode() error {
 	data := r.Bytes()
 
 	funct := data[1]
@@ -74,7 +75,7 @@ func (r *Response) DecodeResponse(dest interface{}) error {
 
 	// Check destination
 	if metaByte&types.BIT5 == 1 {
-		destNet = util.DecodeUnsigned16(data[offset : offset+2])
+		destNet = encoding.DecodeUnsigned16(data[offset : offset+2])
 		offset += 2
 		addrLen := data[offset]
 		offset++
@@ -105,7 +106,7 @@ func (r *Response) DecodeResponse(dest interface{}) error {
 		r.NetworkMessageType = types.NetworkMessageType(nmt)
 
 		if r.NetworkMessageType >= 0x80 {
-			r.VendorID = util.DecodeUnsigned16(data[offset : offset+2])
+			r.VendorID = encoding.DecodeUnsigned16(data[offset : offset+2])
 			offset += 2
 		}
 	} else {
@@ -122,23 +123,20 @@ func (r *Response) DecodeResponse(dest interface{}) error {
 	choice := data[offset]
 	offset++
 	request := data[offset:]
-	r.Valid = true
 
-	// TODO implement other pdu types
-	switch pduType {
-	case types.PDU_TYPE_UNCONFIRMED_SERVICE_REQUEST:
-		return r.HandleUnconfirmedServiceRequest(choice, request, dest)
-	default:
-		r.Valid = false
-		return errors.New("Unsupported pdu type")
-	}
+	r.Valid = true
+	r.PduType = pduType
+	r.Message = encoding.NewBuffer(request)
+	r.Choice = choice
+
+	return nil
 }
 
 func (r *Response) HandleUnconfirmedServiceRequest(choice byte, request []byte, dest interface{}) error {
 	switch choice {
 	// TODO implement other service choices
 	case types.SERVICE_UNCONFIRMED_I_AM:
-		req := encoding.IAmServiceRequest(request)
+		req := IAmServiceRequest(request)
 		if ok := dest.(*Device); ok != nil {
 			return req.Decode(ok)
 		} else {
