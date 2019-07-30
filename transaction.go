@@ -2,54 +2,33 @@ package gobac
 
 import (
 	"log"
-	"sync"
 	"time"
 )
 
-var transactions = make(map[uint8]*Transaction)
-var mutex sync.RWMutex
+var transactions = make([]bool, 255)
 
-type TransactionHandler = func(data []byte)
+func NewTransaction() uint8 {
+	var invokeId uint8 = 0
+	var i uint8
 
-type Transaction struct {
-	InvokeID uint8
-	Handler  TransactionHandler
-}
-
-func NewTransaction(handler TransactionHandler) *Transaction {
-	invokeId := -1
-
-	mutex.RLock()
-	for i := 0; i < 255; i++ {
-		if _, exists := transactions[uint8(i)]; exists {
+	for i = 1; i < 255; i++ {
+		if exists := transactions[uint8(i)]; exists {
 			continue
 		}
-
 		invokeId = i
 		break
 	}
-	mutex.RUnlock()
 
-	if invokeId < 0 {
+	if invokeId == 0 {
 		log.Println("There isn't an invoke ID available, sleeping for 3 seconds and retrying...")
 		time.Sleep(time.Second * 3)
-		return NewTransaction(handler)
+		return NewTransaction()
 	}
 
-	t := &Transaction{
-		InvokeID: uint8(invokeId),
-		Handler:  handler,
-	}
-
-	mutex.Lock()
-	transactions[t.InvokeID] = t
-	mutex.Unlock()
-
-	return t
+	transactions[invokeId] = true
+	return invokeId
 }
 
-func (t *Transaction) Release() {
-	mutex.Lock()
-	delete(transactions, t.InvokeID)
-	mutex.Unlock()
+func ReleaseTransaction(invokeId uint8) {
+	transactions[invokeId] = false
 }

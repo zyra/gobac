@@ -1,22 +1,21 @@
 package gobac
 
-import (
-	"github.com/zyra/gobac/types"
-)
+import "github.com/zyra/gobac/types"
 
 type Object struct {
 	Device   *Device
-	Type     uint32
-	Instance uint32
+	Type     types.ObjectType
+	Instance uint16
 	IsDevice bool
 }
 
-func (o *Object) GetProperty(id types.PropertyId, index uint32) (*Property, error) {
+func (o *Object) GetProperty(id PropertyId, index uint32) (*Property, error) {
 	prop := &Property{
 		Object: o,
-		Index:  index,
-		ID:     id,
 	}
+
+	prop.Index = index
+	prop.ID = id
 
 	if err := prop.GetValue(); err != nil {
 		return nil, err

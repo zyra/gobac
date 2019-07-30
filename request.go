@@ -4,12 +4,20 @@ import (
 	"fmt"
 	"github.com/zyra/gobac/encoding"
 	"github.com/zyra/gobac/types"
+	"log"
 )
+
+type Request struct {
+	*Pdu
+	Server            *Server
+	IsBroadcastTarget bool
+}
 
 func NewRequest(s *Server) *Request {
 	req := &Request{
-		Pdu:    NewPdu(),
-		Server: s,
+		Pdu:               NewPdu(),
+		Server:            s,
+		IsBroadcastTarget: true,
 	}
 
 	req.Source = s.IPv4
@@ -18,11 +26,6 @@ func NewRequest(s *Server) *Request {
 	req.TargetPort = s.BroadcastPort
 
 	return req
-}
-
-type Request struct {
-	*Pdu
-	Server *Server
 }
 
 func (d *Request) EncodeNpdu() {
@@ -36,7 +39,9 @@ func (d *Request) EncodeNpdu() {
 		b |= types.BIT7
 	}
 
-	b |= types.BIT5
+	if d.IsBroadcastTarget {
+		b |= types.BIT5
+	}
 
 	if d.ExpectingReply {
 		b |= types.BIT2
@@ -47,36 +52,15 @@ func (d *Request) EncodeNpdu() {
 	_ = d.AppendByte(b)
 
 	// Broadcast
-	_ = d.EncodeUnsigned16(65535)
-
-	_ = d.AppendByte(0)
-
-	_ = d.AppendByte(d.HopCount)
+	if d.IsBroadcastTarget {
+		_ = d.EncodeUnsigned16(65535)
+		_ = d.AppendByte(0)
+		_ = d.AppendByte(d.HopCount)
+	}
 
 	if d.NetworkLayerMessage {
-		if d.NetworkMessageType > 255 {
-			panic("Invalid message type")
-		}
-
-		_ = d.AppendByte(byte(d.NetworkMessageType))
-
-		if d.NetworkMessageType >= 0x80 {
-			_ = d.AppendBytes([]byte{
-				byte((d.VendorID & 0xff00) >> 8),
-				byte(d.VendorID & 0x00ff),
-			})
-		}
+		log.Println("encoding NPDU with a network layer message; this is not supported!")
 	}
-}
-
-func (d *Request) EncodeWhoIsApdu(minInstance, maxInstance uint32) {
-	_ = d.AppendBytes([]byte{
-		types.PDU_TYPE_UNCONFIRMED_SERVICE_REQUEST,
-		types.SERVICE_UNCONFIRMED_WHO_IS,
-	})
-
-	//d.EncodeContext(0, minInstance)
-	//d.EncodeContext(1, maxInstance)
 }
 
 func (d *Request) EncodeContext(tag uint8, value uint32) {
@@ -100,7 +84,13 @@ func (d *Request) Send() {
 	buff := encoding.NewBuffer()
 
 	_ = buff.AppendByte(0x81)
-	_ = buff.AppendByte(types.BVLC_ORIGINAL_BROADCAST_NPDU)
+
+	if d.IsBroadcastTarget {
+		_ = buff.AppendByte(types.BVLC_ORIGINAL_BROADCAST_NPDU)
+	} else {
+		_ = buff.AppendByte(types.BVLC_ORIGINAL_UNICAST_NPDU)
+	}
+
 	_ = buff.EncodeUnsigned16(uint16(d.Len()) + 4)
 	_ = buff.AppendBytes(d.Bytes())
 
@@ -112,5 +102,7 @@ func (d *Request) SendMDPU(mtu *encoding.Buffer) {
 
 	if err := d.Server.SendMPDU(mtu, destUdp); err != nil {
 		fmt.Println("Error sending MDPU", err)
+	} else {
+		fmt.Println("Sent MDPU!")
 	}
 }

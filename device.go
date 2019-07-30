@@ -7,6 +7,7 @@ import (
 
 type Device struct {
 	*Object
+	Server          *Server
 	IPAddress       *net.IP
 	MACAddress      *net.HardwareAddr
 	DeviceID        uint32
@@ -25,15 +26,12 @@ func NewDevice() *Device {
 	return &d
 }
 
-func (d *Device) GetObjects() (*[]*Object, error) {
-	objects := make([]*Object, 0)
+func (d *Device) GetObjects(dest *[]*Object) error {
 	prop, err := d.GetProperty(types.PROP_OBJECT_LIST, 0)
 
 	if err != nil {
-		return nil, err
+		return err
 	}
-
-	prop.ReadValue(&objects)
-
-	return &objects, err
+	prop.ReadValueAsObject(dest)
+	return nil
 }

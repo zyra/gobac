@@ -1,13 +1,19 @@
 package encoding
 
 import (
-	"bytes"
-	_type "github.com/zyra/gobac/types"
+	"github.com/zyra/gobac/types"
 )
 
-func DecodeObjectId(buf *bytes.Buffer) (objectType uint32, objectInstance uint32) {
+func (buf *Buffer) EncodeObjectId(objectType types.ObjectType, objectInstance uint16) error {
+	octet := uint32(objectType) & types.BACNET_MAX_OBJECT
+	octet <<= types.BACNET_INSTANCE_BITS
+	octet |= uint32(objectInstance) & types.BACNET_MAX_INSTANCE
+	return buf.EncodeUnsigned32(octet)
+}
+
+func (buf *Buffer) DecodeObjectId() (objectType uint16, objectInstance uint16) {
 	value := DecodeUnsigned32(buf.Next(4))
-	objectType = uint32(uint16((value >> _type.BACNET_INSTANCE_BITS) & _type.BACNET_MAX_OBJECT))
-	objectInstance = value & _type.BACNET_MAX_INSTANCE
+	objectType = uint16((value >> types.BACNET_INSTANCE_BITS) & types.BACNET_MAX_OBJECT)
+	objectInstance = uint16(value & types.BACNET_MAX_INSTANCE)
 	return objectType, objectInstance
 }

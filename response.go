@@ -1,26 +1,25 @@
 package gobac
 
 import (
-	"github.com/kataras/iris/core/errors"
+	"fmt"
 	"github.com/zyra/gobac/encoding"
-	"github.com/zyra/gobac/types"
 	"net"
 )
 
 type Response struct {
 	*Pdu
-	RawData []byte
-	Valid   bool
-	Sender  *net.UDPAddr
-	PduType types.PduType
-	Message *encoding.Buffer
-	Choice  byte
+	Valid                bool
+	Sender               *net.UDPAddr
+	MaxSegments          uint32
+	MaxAPDU              uint32
+	SequenceNumber       uint32
+	ProposedWindowNumber uint32
+	IsBroadcast          bool
 }
 
-func NewPduResponse(data []byte) *Response {
+func NewResponse(data []byte) *Response {
 	pdu := &Response{
 		Pdu:     NewPdu(),
-		RawData: data,
 	}
 
 	pdu.Pdu.Buffer = encoding.NewBuffer(data)
@@ -28,122 +27,134 @@ func NewPduResponse(data []byte) *Response {
 	return pdu
 }
 
-func (r *Response) Decode() error {
-	data := r.Bytes()
+func (r *Response) DecodeBVLC() error {
+	r.ProtocolType = r.NextOne()
 
-	funct := data[1]
+	if r.ProtocolType != BACnetProtocol {
+		return fmt.Errorf("expected protocol to be %x but got %x", BACnetProtocol, r.ProtocolType)
+	}
 
-	npduLen := (uint16(data[2]) << 8) & 0xFF00
-	npduLen |= uint16(data[3]) & 0x00FF
+	r.Function = r.NextOne()
 
-	npduLen -= 4
-	data = data[:npduLen+4]
+	switch r.Function {
+	case OriginalUnicastNPDU:
+		break
 
-	switch funct {
-	case types.BVLC_ORIGINAL_BROADCAST_NPDU:
-		for i := uint16(0); i < npduLen; i++ {
-			data[i] = data[4+i]
-		}
+	case OriginalBroadcastNPDU:
+		r.IsBroadcast = true
 		break
 
 	default:
-		return errors.New("unsupported function type")
+		return fmt.Errorf("received a function type that doesn't interest us: %x", r.Function)
 	}
 
-	offset := 0
-
-	r.ProtocolVersion = data[0]
-
-	// Make sure protocol is correct
-	if r.ProtocolVersion != 1 {
-		// Invalid version
-		return errors.New("invalid protocol version")
-	}
-
-	metaByte := data[1]
-
-	r.NetworkLayerMessage = metaByte&types.BIT7 == 1
-	r.ExpectingReply = metaByte&types.BIT2 == 1
-	r.Priority = metaByte & 0x03
-
-	offset = 2
-
-	//var srcNet uint16
-	var destNet uint16
-
-	//var addrLen uint8
-
-	// Check destination
-	if metaByte&types.BIT5 == 1 {
-		destNet = encoding.DecodeUnsigned16(data[offset : offset+2])
-		offset += 2
-		addrLen := data[offset]
-		offset++
-		offset += int(addrLen)
-	}
-
-	// Check source
-	if metaByte&types.BIT3 == 1 {
-		//srcNet = util.DecodeUnsigned16(data[offset : offset+2])
-		offset += 2
-		addrLen := data[offset]
-		offset++
-		offset += int(addrLen)
-	}
-
-	// Check hop count
-	if destNet > 0 {
-		r.HopCount = data[offset]
-		offset++
-	} else {
-		r.HopCount = 0
-	}
-
-	if r.NetworkLayerMessage {
-		nmt := data[offset]
-		offset++
-
-		r.NetworkMessageType = types.NetworkMessageType(nmt)
-
-		if r.NetworkMessageType >= 0x80 {
-			r.VendorID = encoding.DecodeUnsigned16(data[offset : offset+2])
-			offset += 2
-		}
-	} else {
-		r.NetworkMessageType = types.NETWORK_MESSAGE_INVALID
-	}
-
-	if r.NetworkLayerMessage {
-		return errors.New("network layer messages are not supported")
-	}
-
-	offset += 4
-	pduType := data[offset] & 0xF0
-	offset++
-	choice := data[offset]
-	offset++
-	request := data[offset:]
-
-	r.Valid = true
-	r.PduType = pduType
-	r.Message = encoding.NewBuffer(request)
-	r.Choice = choice
+	r.BVLCLength = r.DecodeUnsigned16()
+	r.NPDULength = r.BVLCLength - 4
+	r.Truncate(int(r.NPDULength))
 
 	return nil
 }
 
-func (r *Response) HandleUnconfirmedServiceRequest(choice byte, request []byte, dest interface{}) error {
-	switch choice {
-	// TODO implement other service choices
-	case types.SERVICE_UNCONFIRMED_I_AM:
-		req := IAmServiceRequest(request)
-		if ok := dest.(*Device); ok != nil {
-			return req.Decode(ok)
-		} else {
-			return errors.New("Invalid dest type passed")
+func (r *Response) DecodeNPCI() error {
+	l := r.Len()
+
+	r.ProtocolVersion = r.NextOne()
+
+	if r.ProtocolVersion != BACnetVersion {
+		return fmt.Errorf("expected protocol version to be %d but got %d", 1, r.ProtocolVersion)
+	}
+
+	ctrl := r.NextOne()
+
+	if r.NetworkLayerMessage = ctrl&0x80 != 0; r.NetworkLayerMessage {
+		return fmt.Errorf("network layer messages aren't supported")
+	}
+
+	r.ControlOctet = ctrl
+
+	if hasDest := ctrl & 0x20; hasDest != 0 {
+		// DNET, DLEN, and DADR are present
+		// We don't need this info since we're not dealing with raw packets
+		// Let's just shave a few bytes off the buffer
+		// DNET is 2 octets
+		// DLEN is 1 octet
+		// DADR is DLEN
+		// +1 octet for hop count
+		r.Next(2)                // dnet
+		dLen := r.NextOne()      // dlen
+		r.Next(int(dLen))        // dadr
+		r.HopCount = r.NextOne() // hopcount
+	}
+
+	if hasSrc := ctrl & 0x08; hasSrc != 0 {
+		// SNET, SLEN, SADR are present
+		// Let's shave the bytes off
+		// SNET = 2 octets
+		// SLEN = 1 octet
+		// SADR = SLEN
+		r.Next(2)           // snet
+		sLen := r.NextOne() // slen
+		r.Next(int(sLen))   // sadr
+	}
+
+	// Expecting reply is
+	r.ExpectingReply = ctrl&0x04 != 0
+
+	// Priority is the first 2 bits
+	r.Priority = ctrl & 0x03
+
+	magicByte := r.NextOne()
+
+	r.PduType = magicByte & 0xF0
+
+	switch r.PduType {
+	case PduTypeUnconfirmedServiceRequest:
+		break
+
+	case PduTypeConfirmedServiceRequest:
+		panic("shouldnt really get here..")
+
+	case PduTypeSimpleAck:
+		panic("unhandled")
+
+	case PduTypeComplexAck:
+		r.InvokeID = r.NextOne()
+
+		if segmented := magicByte & 0x8; segmented != 0 {
+			// Sequence number
+			r.NextOne()
+
+			// Proposed window size
+			r.NextOne()
+
+			panic("segmentation is not handled!")
 		}
 
+		break
+
+	case PduTypeSegmentAck:
+		panic("unhandled")
+
 	default:
-		panic("Unsupported service choice")
+		return fmt.Errorf("unsupported pdu type: %x", r.PduType)
 	}
+
+	r.ServiceChoice = r.NextOne()
+	r.MessageLength = r.NPDULength - uint16(l - r.Len())
+
+	return nil
+}
+
+func (r *Response) Decode() error {
+	if err := r.DecodeBVLC(); err != nil {
+		return err
+	}
+
+	if err := r.DecodeNPCI(); err != nil {
+		return err
+	}
+
+	r.Valid = true
+
+	return nil
 }

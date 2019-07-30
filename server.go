@@ -31,8 +31,7 @@ type Server struct {
 	Operations    *[]*Operation
 	Close         chan int
 	ErrorCallback func(err error)
-	cHandlers     map[types.ConfirmedService]responseHandler
-	cHandlersMtx  sync.RWMutex
+	cHandlers     []responseHandler
 	ucHandlers    map[types.UnconfirmedService]responseHandler
 	ucHandlersMtx sync.RWMutex
 }
@@ -51,7 +50,7 @@ func NewServer(ifname string) (*Server, error) {
 		BroadcastPort: 0xBAC0,
 		Timeout:       time.Second * 10,
 		Operations:    &ops,
-		cHandlers:     make(map[types.ConfirmedService]responseHandler),
+		cHandlers:     make([]responseHandler, 255, 255),
 		ucHandlers:    make(map[types.UnconfirmedService]responseHandler),
 		networkSet:    ns,
 	}
@@ -118,7 +117,12 @@ func (s *Server) receiveBroadcast() {
 }
 
 func (s *Server) handle(data []byte, address *net.UDPAddr) {
-	res := NewPduResponse(data)
+	if address.IP.Equal(s.ServerAddr.IP) {
+		log.Println("Ignoring message that we broad casted")
+		return
+	}
+
+	res := NewResponse(data)
 	res.Sender = address
 	if err := res.Decode(); err != nil {
 		log.Printf("error decoding response: %s\n", err)
@@ -126,21 +130,21 @@ func (s *Server) handle(data []byte, address *net.UDPAddr) {
 	}
 
 	switch res.PduType {
-	case types.PDU_TYPE_UNCONFIRMED_SERVICE_REQUEST:
-		h := s.getUnconfirmedHandler(res.Choice)
+	case PduTypeUnconfirmedServiceRequest:
+		h := s.getUnconfirmedHandler(res.ServiceChoice)
 		if h != nil {
 			(*h)(res)
 		} else {
-			log.Printf("no handler was registered for pdu type %d, ignoring this message\n", res.PduType)
+			log.Printf("no handler was registered for unconfirmed choice %d, ignoring this message\n", res.ServiceChoice)
 		}
 		break
 
-	case types.PDU_TYPE_CONFIRMED_SERVICE_REQUEST:
-		h := s.getConfirmedHandler(res.Choice)
+	case PduTypeComplexAck:
+		h := s.getConfirmedHandler(res.InvokeID)
 		if h != nil {
 			(*h)(res)
 		} else {
-			log.Printf("no handler was registered for pdu type %d, ignoring this message\n", res.PduType)
+			log.Printf("no handler was registered for invoke id %d, ignoring this message\n", res.InvokeID)
 		}
 		break
 
@@ -150,25 +154,19 @@ func (s *Server) handle(data []byte, address *net.UDPAddr) {
 	}
 }
 
-func (s *Server) getConfirmedHandler(service types.ConfirmedService) *responseHandler {
-	s.cHandlersMtx.RLock()
-	defer s.cHandlersMtx.RUnlock()
-	if h, exists := s.cHandlers[service]; exists {
+func (s *Server) getConfirmedHandler(invokeId uint8) *responseHandler {
+	if h := s.cHandlers[invokeId - 1]; h != nil {
 		return &h
 	}
 	return nil
 }
 
-func (s *Server) setConfirmedHandler(service types.ConfirmedService, handler responseHandler) {
-	s.cHandlersMtx.Lock()
-	defer s.cHandlersMtx.Unlock()
-	s.cHandlers[service] = handler
+func (s *Server) setConfirmedHandler(invokeId uint8, handler responseHandler) {
+	s.cHandlers[invokeId - 1] = handler
 }
 
-func (s *Server) removeConfirmedHandler(service types.ConfirmedService) {
-	s.cHandlersMtx.Lock()
-	defer s.cHandlersMtx.Unlock()
-	delete(s.cHandlers, service)
+func (s *Server) removeConfirmedHandler(invokeId uint8) {
+	s.cHandlers[invokeId - 1] = nil
 }
 
 func (s *Server) getUnconfirmedHandler(service types.UnconfirmedService) *responseHandler {

@@ -15,10 +15,19 @@ type Pdu struct {
 	ProtocolVersion     uint8
 	ExpectingReply      bool
 	NetworkLayerMessage bool
-	Priority            types.MessagePriority
-	NetworkMessageType  types.NetworkMessageType
+	Priority            MessagePriority
 	VendorID            uint16
 	HopCount            uint8
+
+	ProtocolType  uint8
+	Function      BVLCFunction
+	MessageLength uint16
+	ControlOctet  byte
+	BVLCLength    uint16
+	NPDULength    uint16
+	ServiceChoice uint8
+	PduType       PduType
+	InvokeID      uint8
 }
 
 func NewPdu() *Pdu {
@@ -28,7 +37,6 @@ func NewPdu() *Pdu {
 		ExpectingReply:      false,
 		NetworkLayerMessage: false,
 		Priority:            types.MESSAGE_PRIORITY_NORMAL,
-		NetworkMessageType:  types.NETWORK_MESSAGE_INVALID,
 		VendorID:            0,
 		HopCount:            255,
 	}

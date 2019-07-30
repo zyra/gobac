@@ -8,7 +8,7 @@ import (
 var server *Server
 var devices = make([]*Device, 0)
 var device *Device
-var objects []*Object
+var objects = make([]*Object, 0)
 var ifname = "docker0"
 var err error
 
@@ -51,8 +51,16 @@ func TestObjects(t *testing.T) {
 		t.FailNow()
 	}
 
-	if err != nil {
-		fmt.Println("Error!", err)
+	if err = device.GetObjects(&objects); err != nil {
+		t.Error(err)
+		t.FailNow()
+	}
+
+	olen := len(objects)
+
+	if olen <= 0 {
+		t.Error("No objects found")
+		t.FailNow()
 	}
 
 	fmt.Println(len(objects))
