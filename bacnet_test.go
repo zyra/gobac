@@ -43,6 +43,8 @@ func TestScan(t *testing.T) {
 		t.FailNow()
 	}
 
+	fmt.Printf("Found %d devices", dLen)
+
 	device = devices[0]
 }
 

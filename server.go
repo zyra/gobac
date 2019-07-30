@@ -34,6 +34,7 @@ type Server struct {
 	cHandlers     []responseHandler
 	ucHandlers    map[types.UnconfirmedService]responseHandler
 	ucHandlersMtx sync.RWMutex
+	Concurrency   uint8
 }
 
 func NewServer(ifname string) (*Server, error) {
@@ -53,6 +54,7 @@ func NewServer(ifname string) (*Server, error) {
 		cHandlers:     make([]responseHandler, 255, 255),
 		ucHandlers:    make(map[types.UnconfirmedService]responseHandler),
 		networkSet:    ns,
+		Concurrency:   20,
 	}
 
 	return s, nil
@@ -74,8 +76,10 @@ func (s *Server) Listen() {
 		s.UConnection = conn
 	}
 
-	go s.receiveUnicast()
-	go s.receiveBroadcast()
+	for i := uint8(0); i < s.Concurrency; i++ {
+		go s.receiveUnicast()
+		go s.receiveBroadcast()
+	}
 }
 
 func (s *Server) closeConn() {
@@ -155,18 +159,18 @@ func (s *Server) handle(data []byte, address *net.UDPAddr) {
 }
 
 func (s *Server) getConfirmedHandler(invokeId uint8) *responseHandler {
-	if h := s.cHandlers[invokeId - 1]; h != nil {
+	if h := s.cHandlers[invokeId-1]; h != nil {
 		return &h
 	}
 	return nil
 }
 
 func (s *Server) setConfirmedHandler(invokeId uint8, handler responseHandler) {
-	s.cHandlers[invokeId - 1] = handler
+	s.cHandlers[invokeId-1] = handler
 }
 
 func (s *Server) removeConfirmedHandler(invokeId uint8) {
-	s.cHandlers[invokeId - 1] = nil
+	s.cHandlers[invokeId-1] = nil
 }
 
 func (s *Server) getUnconfirmedHandler(service types.UnconfirmedService) *responseHandler {

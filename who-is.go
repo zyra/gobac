@@ -21,16 +21,16 @@ func (s *Server) WhoIs(dest *[]*Device) error {
 	var instanceMax uint32 = 0x3FFFFF
 
 	req := &whoIsRequest{
-		devices:        dest,
+		devices: dest,
 		Request: NewRequest(s),
 	}
 	req.EncodeNpdu()
 	req.EncodeWhoIsApdu(instanceMin, instanceMax)
-	req.Send()
-
 	tc, c, h := getChanHandlerWithTimeout(time.Second * 5)
+	s.setUnconfirmedHandler(UnconfirmedServiceIAm, h)
+	defer s.removeUnconfirmedHandler(UnconfirmedServiceIAm)
 
-	s.setUnconfirmedHandler(types.SERVICE_UNCONFIRMED_I_AM, h)
+	req.Send()
 
 Loop:
 	for {
@@ -38,7 +38,8 @@ Loop:
 		case <-tc:
 			break Loop
 		case data := <-c:
-			req.handle(data)
+			req.waitGroup.Add(1)
+			go req.handle(data)
 			continue
 		}
 	}
@@ -49,23 +50,19 @@ Loop:
 }
 
 func (r *whoIsRequest) handle(v *Response) {
-	r.waitGroup.Add(1)
-	go func(r *whoIsRequest, v *Response) {
-		device := NewDevice()
-		device.Server = r.Server
+	defer r.waitGroup.Done()
+	device := NewDevice()
+	device.Server = r.Server
 
-		if err := v.DecodeIAmApdu(device); err != nil {
-			fmt.Println("error decoding response", err)
-		} else {
-			device.OriginInterface = r.Server.InterfaceName
-			device.IPAddress = &v.Sender.IP
-			r.mutex.Lock()
-			*r.devices = append(*r.devices, device)
-			r.mutex.Unlock()
-		}
-
-		r.waitGroup.Done()
-	}(r, v)
+	if err := v.DecodeIAmApdu(device); err != nil {
+		fmt.Println("error decoding response", err)
+	} else {
+		device.OriginInterface = r.Server.InterfaceName
+		device.IPAddress = &v.Sender.IP
+		r.mutex.Lock()
+		*r.devices = append(*r.devices, device)
+		r.mutex.Unlock()
+	}
 }
 
 func (d *Request) EncodeWhoIsApdu(minInstance, maxInstance uint32) {
