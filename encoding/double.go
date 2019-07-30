@@ -13,3 +13,10 @@ func (buf *Buffer) DecodeDouble(lenValue uint32) (val float64) {
 	bits := binary.LittleEndian.Uint64(buf.Next(8))
 	return math.Float64frombits(bits)
 }
+
+func (buf *Buffer) EncodeDouble(value float64) error {
+	bytes := make([]byte, 8)
+	bits := math.Float64bits(value)
+	binary.LittleEndian.PutUint64(bytes, bits)
+	return buf.AppendBytes(bytes)
+}

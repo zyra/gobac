@@ -118,7 +118,7 @@ func (s *Server) receiveBroadcast() {
 
 func (s *Server) handle(data []byte, address *net.UDPAddr) {
 	if address.IP.Equal(s.ServerAddr.IP) {
-		log.Println("Ignoring message that we broad casted")
+		// Ignore our broadcasts
 		return
 	}
 

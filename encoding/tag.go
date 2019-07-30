@@ -41,18 +41,18 @@ func (buf *Buffer) EncodeTag(tag uint8, contextSpecific bool, lenValueType uint3
 }
 
 func (buf *Buffer) DecodeTag() (tagNumber uint8, lenValue uint32) {
-	b1, _ := buf.ReadByte()
+	b1 := buf.NextOne()
+	var b2 byte
 
 	if (b1 & 0xF0) == 0xF0 {
-		b2, _ := buf.ReadByte()
+		b2 = buf.NextOne() // Now we read it
 		tagNumber = b2
 	} else {
 		tagNumber = b1 >> 4
 	}
 
 	if b1&0x07 == 5 {
-		n := buf.Bytes()[0]
-		switch n {
+		switch b2 {
 		case 255:
 			lenValue = DecodeUnsigned32(buf.Next(4))
 			break

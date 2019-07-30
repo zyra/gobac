@@ -151,7 +151,8 @@ func (r *Response) DecodePropertyValue(dest *PropertyValue) {
 		dest.Value = lenValue != 0
 		break
 
-	case TagUnsigned:
+	case TagUnsigned,
+		TagEnumerated:
 		dest.Value = r.DecodeUnsigned(lenValue)
 		break
 
@@ -168,22 +169,24 @@ func (r *Response) DecodePropertyValue(dest *PropertyValue) {
 		break
 
 	case TagOctetString:
-		panic("not implemented")
+		dest.Value = r.Next(int(lenValue))
+		break
 
 	case TagCharacterString:
-		panic("not implemented")
+		dest.Value = r.DecodeCharacterString(lenValue)
+		break
 
 	case TagBitString:
-		panic("not implemented")
-
-	case TagEnumerated:
-		panic("not implemented")
+		dest.Value = r.DecodeBitString(lenValue)
+		break
 
 	case TagDate:
-		panic("not implemented")
+		dest.Value = r.DecodeDate()
+		break
 
 	case TagTime:
-		panic("not implemented")
+		dest.Value = r.DecodeTime()
+		break
 
 	case TagObjectId:
 		objectType, objectInstance := r.DecodeObjectId()

@@ -2198,18 +2198,6 @@ const (
 	WeekdaySunday            = 7
 )
 
-type Date struct {
-	Year  uint16
-	Month uint8
-	Day   uint8
-	Wday  uint8
-}
-type Time struct {
-	Hour       uint8
-	Min        uint8
-	Sec        uint8
-	Hundredths uint8
-}
 type DateTime struct {
 	Date Date
 	Time Time
