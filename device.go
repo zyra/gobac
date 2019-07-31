@@ -1,6 +1,7 @@
 package gobac
 
 import (
+	"github.com/kataras/iris/core/errors"
 	"github.com/zyra/gobac/types"
 	"net"
 )
@@ -32,6 +33,11 @@ func (d *Device) GetObjects(dest *[]*Object) error {
 	if err != nil {
 		return err
 	}
+
+	if prop.Values == nil {
+		return errors.New("property value is nil")
+	}
+
 	prop.ReadValueAsObject(dest)
 	return nil
 }

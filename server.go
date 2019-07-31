@@ -31,10 +31,11 @@ type Server struct {
 	Operations    *[]*Operation
 	Close         chan int
 	ErrorCallback func(err error)
+	cHandlersMtx  sync.RWMutex
 	cHandlers     []responseHandler
 	ucHandlers    map[types.UnconfirmedService]responseHandler
 	ucHandlersMtx sync.RWMutex
-	Concurrency   uint8
+	Concurrency   uint
 }
 
 func NewServer(ifname string) (*Server, error) {
@@ -54,7 +55,7 @@ func NewServer(ifname string) (*Server, error) {
 		cHandlers:     make([]responseHandler, 255, 255),
 		ucHandlers:    make(map[types.UnconfirmedService]responseHandler),
 		networkSet:    ns,
-		Concurrency:   20,
+		Concurrency:   500,
 	}
 
 	return s, nil
@@ -76,7 +77,7 @@ func (s *Server) Listen() {
 		s.UConnection = conn
 	}
 
-	for i := uint8(0); i < s.Concurrency; i++ {
+	for i := uint(0); i < s.Concurrency; i++ {
 		go s.receiveUnicast()
 		go s.receiveBroadcast()
 	}
@@ -166,10 +167,14 @@ func (s *Server) getConfirmedHandler(invokeId uint8) *responseHandler {
 }
 
 func (s *Server) setConfirmedHandler(invokeId uint8, handler responseHandler) {
+	s.cHandlersMtx.Lock()
+	defer s.cHandlersMtx.Unlock()
 	s.cHandlers[invokeId-1] = handler
 }
 
 func (s *Server) removeConfirmedHandler(invokeId uint8) {
+	s.cHandlersMtx.Lock()
+	defer s.cHandlersMtx.Unlock()
 	s.cHandlers[invokeId-1] = nil
 }
 

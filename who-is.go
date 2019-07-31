@@ -17,18 +17,16 @@ type whoIsRequest struct {
 }
 
 func (s *Server) WhoIs(dest *[]*Device) error {
-	var instanceMin uint32 = 0
-	var instanceMax uint32 = 0x3FFFFF
-
 	req := &whoIsRequest{
 		devices: dest,
 		Request: NewRequest(s),
 	}
 	req.EncodeNpdu()
-	req.EncodeWhoIsApdu(instanceMin, instanceMax)
-	tc, c, h := getChanHandlerWithTimeout(time.Second * 5)
+	req.EncodeWhoIsApdu()
+	tc, c, h := getChanHandlerWithTimeout(time.Second * 20)
 	s.setUnconfirmedHandler(UnconfirmedServiceIAm, h)
 	defer s.removeUnconfirmedHandler(UnconfirmedServiceIAm)
+	defer req.waitGroup.Wait()
 
 	req.Send()
 
@@ -44,8 +42,6 @@ Loop:
 		}
 	}
 
-	req.waitGroup.Wait()
-
 	return nil
 }
 
@@ -60,12 +56,12 @@ func (r *whoIsRequest) handle(v *Response) {
 		device.OriginInterface = r.Server.InterfaceName
 		device.IPAddress = &v.Sender.IP
 		r.mutex.Lock()
+		defer r.mutex.Unlock()
 		*r.devices = append(*r.devices, device)
-		r.mutex.Unlock()
 	}
 }
 
-func (d *Request) EncodeWhoIsApdu(minInstance, maxInstance uint32) {
+func (d *Request) EncodeWhoIsApdu() {
 	_ = d.AppendBytes([]byte{
 		PduTypeUnconfirmedServiceRequest,
 		UnconfirmedServiceWhoIs,

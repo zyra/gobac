@@ -10,12 +10,9 @@ type readPropertyRequest struct {
 	*Request
 	object     *Object
 	propertyId PropertyId
-	dest       interface{}
 }
 
 func (s *Server) SendReadPropertyRequest(object *Object, propertyId PropertyId, dest *Property) error {
-	tc, c, h := getChanHandlerWithTimeout(time.Second * 10)
-
 	req := &readPropertyRequest{
 		Request:    NewRequest(s),
 		propertyId: propertyId,
@@ -23,6 +20,7 @@ func (s *Server) SendReadPropertyRequest(object *Object, propertyId PropertyId, 
 	}
 
 	req.InvokeID = NewTransaction()
+	tc, c, h := getChanHandlerWithTimeout(time.Second * 30)
 	s.setConfirmedHandler(req.InvokeID, h)
 
 	defer ReleaseTransaction(req.InvokeID)
@@ -133,8 +131,6 @@ func (r *Response) DecodeReadPropertyApdu(object *Object, propertyId PropertyId,
 	if tagNumber != TagContextPropertyValue {
 		return fmt.Errorf("expected tagNumber to be %d but got %d", TagContextPropertyValue, tagNumber)
 	}
-
-	fmt.Println("Got it!", tagNumber, lenValue, objectType, objectInstance)
 
 	return nil
 }

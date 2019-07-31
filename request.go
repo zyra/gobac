@@ -102,7 +102,5 @@ func (d *Request) SendMDPU(mtu *encoding.Buffer) {
 
 	if err := d.Server.SendMPDU(mtu, destUdp); err != nil {
 		fmt.Println("Error sending MDPU", err)
-	} else {
-		fmt.Println("Sent MDPU!")
 	}
 }
