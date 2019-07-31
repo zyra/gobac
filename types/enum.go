@@ -2183,7 +2183,7 @@ type Address struct {
 }
 type ObjectId struct {
 	Type     uint16
-	Instance uint32
+	Instance uint16
 }
 
 type Weekday uint32

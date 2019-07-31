@@ -2,6 +2,7 @@ package gobac
 
 import (
 	"fmt"
+	"github.com/zyra/gobac/types"
 	"os"
 	"sync"
 	"testing"
@@ -60,7 +61,6 @@ type stats struct {
 	f int
 }
 
-
 func TestObjects(t *testing.T) {
 	if isBench {
 		twg := &sync.WaitGroup{}
@@ -106,4 +106,46 @@ func TestObjects(t *testing.T) {
 	}
 
 	fmt.Println(len(objects))
+}
+
+func TestWrite(t *testing.T) {
+	if len(objects) == 0 {
+		t.Error("objects array has length of 0")
+		t.FailNow()
+	}
+
+	var obj *Object
+
+	for _, o := range objects {
+		if o.Type == types.OBJECT_ANALOG_VALUE {
+			obj = o
+			break
+		}
+	}
+
+	if obj == nil {
+		t.Error("couldn't find an AO obj")
+		t.FailNow()
+	}
+
+	prop, err := obj.GetProperty(types.PROP_PRESENT_VALUE)
+
+	if err != nil {
+		t.Error(err)
+		t.FailNow()
+	}
+
+	if err := prop.SetValue(TagReal, 3); err != nil {
+		t.Error(err)
+	} else {
+		fmt.Println("Wrote prop to obj!")
+		prop, err = obj.GetProperty(types.PROP_PRESENT_VALUE)
+
+		if err != nil {
+			t.Error(err)
+			t.FailNow()
+		}
+
+		fmt.Println("Read the same prop again")
+	}
 }

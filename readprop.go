@@ -20,11 +20,7 @@ func (s *Server) SendReadPropertyRequest(object *Object, propertyId PropertyId, 
 	}
 
 	req.InvokeID = NewTransaction()
-	tc, c, h := getChanHandlerWithTimeout(time.Second * 30)
-	s.setConfirmedHandler(req.InvokeID, h)
-
 	defer ReleaseTransaction(req.InvokeID)
-	defer s.removeConfirmedHandler(req.InvokeID)
 
 	req.ExpectingReply = true
 	req.IsBroadcastTarget = false
@@ -36,6 +32,11 @@ func (s *Server) SendReadPropertyRequest(object *Object, propertyId PropertyId, 
 	}
 
 	req.Target = object.Device.IPAddress
+
+	tc, c, h := getChanHandlerWithTimeout(time.Second * 30)
+	s.setConfirmedHandler(req.InvokeID, h)
+	defer s.removeConfirmedHandler(req.InvokeID)
+
 
 	req.Send()
 

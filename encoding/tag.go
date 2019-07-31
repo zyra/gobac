@@ -1,5 +1,39 @@
 package encoding
 
+func (buf *Buffer) EncodeOpeningTag(tag uint8) error {
+	b := []byte{0}
+
+	b[0] = 0x08
+
+	if tag <= 14 {
+		b[0] |= tag << 4
+	} else {
+		b[0] |= 0xF0
+		b[1] = tag
+	}
+
+	b[0] |= 6
+
+	return buf.AppendBytes(b)
+}
+
+func (buf *Buffer) EncodeClosingTag(tag uint8) error {
+	b := []byte{0}
+
+	b[0] = 0x08
+
+	if tag <= 14 {
+		b[0] |= tag << 4
+	} else {
+		b[0] |= 0xF0
+		b[1] = tag
+	}
+
+	b[0] |= 7
+
+	return buf.AppendBytes(b)
+}
+
 func (buf *Buffer) EncodeTag(tag uint8, contextSpecific bool, lenValueType uint32) error {
 	b := []byte{0}
 	var err error

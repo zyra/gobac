@@ -23,7 +23,7 @@ func (s *Server) WhoIs(dest *[]*Device) error {
 	}
 	req.EncodeNpdu()
 	req.EncodeWhoIsApdu()
-	tc, c, h := getChanHandlerWithTimeout(time.Second * 20)
+	tc, c, h := getChanHandlerWithTimeout(time.Second * 5)
 	s.setUnconfirmedHandler(UnconfirmedServiceIAm, h)
 	defer s.removeUnconfirmedHandler(UnconfirmedServiceIAm)
 	defer req.waitGroup.Wait()

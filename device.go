@@ -28,7 +28,7 @@ func NewDevice() *Device {
 }
 
 func (d *Device) GetObjects(dest *[]*Object) error {
-	prop, err := d.GetProperty(types.PROP_OBJECT_LIST, 0)
+	prop, err := d.GetProperty(types.PROP_OBJECT_LIST)
 
 	if err != nil {
 		return err

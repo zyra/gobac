@@ -115,7 +115,8 @@ func (r *Response) DecodeNPCI() error {
 		panic("shouldnt really get here..")
 
 	case PduTypeSimpleAck:
-		panic("unhandled")
+		fmt.Println("Got a simple ack.. ignoring it for now since it's useless")
+		break
 
 	case PduTypeComplexAck:
 		r.InvokeID = r.NextOne()

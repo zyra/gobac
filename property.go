@@ -42,6 +42,6 @@ func (p *Property) GetValue() error {
 	return p.Object.Device.Server.SendReadPropertyRequest(p.Object, p.ID, p)
 }
 
-func (p *Property) SetValue(interface{}) error {
-	return nil
+func (p *Property) SetValue(dataType DataTag, value interface{}) error {
+	return p.Object.Device.Server.SendWritePropertyRequest(p.Object, p.ID, dataType, 6, value)
 }

@@ -9,12 +9,12 @@ type Object struct {
 	IsDevice bool
 }
 
-func (o *Object) GetProperty(id PropertyId, index uint32) (*Property, error) {
+func (o *Object) GetProperty(id PropertyId) (*Property, error) {
 	prop := &Property{
 		Object: o,
 	}
 
-	prop.Index = index
+	prop.Index = 0
 	prop.ID = id
 
 	if err := prop.GetValue(); err != nil {
