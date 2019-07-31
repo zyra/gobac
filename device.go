@@ -1,7 +1,7 @@
 package gobac
 
 import (
-	"github.com/kataras/iris/core/errors"
+	"errors"
 	"github.com/zyra/gobac/types"
 	"net"
 )

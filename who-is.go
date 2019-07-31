@@ -3,7 +3,6 @@ package gobac
 import (
 	"errors"
 	"fmt"
-	"github.com/zyra/bacnet"
 	"github.com/zyra/gobac/types"
 	"sync"
 	"time"
@@ -74,14 +73,14 @@ func (d *Request) EncodeWhoIsApdu() {
 func (r *Response) DecodeIAmApdu(dest *Device) error {
 	tagNumber, lenValue := r.DecodeTag()
 
-	if tagNumber != bacnet.ApplicationTag_OBJECT_ID {
+	if tagNumber != types.ApplicationTag_OBJECT_ID {
 		return errors.New("invalid object id application tag")
 	}
 
 	// Object type & instance
 	objectType, objectInstance := r.DecodeObjectId()
 
-	if objectType != bacnet.OBJECT_DEVICE {
+	if objectType != types.OBJECT_DEVICE {
 		return errors.New("object type isn't a device")
 	}
 
@@ -91,7 +90,7 @@ func (r *Response) DecodeIAmApdu(dest *Device) error {
 	// Max APDU
 	tagNumber, lenValue = r.DecodeTag()
 
-	if tagNumber != bacnet.ApplicationTag_UNSIGNED_INT {
+	if tagNumber != types.ApplicationTag_UNSIGNED_INT {
 		return errors.New("invalid max apdu application tag")
 	}
 
