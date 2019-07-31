@@ -15,11 +15,12 @@ type Response struct {
 	SequenceNumber       uint32
 	ProposedWindowNumber uint32
 	IsBroadcast          bool
+	Failed               bool
 }
 
 func NewResponse(data []byte) *Response {
 	pdu := &Response{
-		Pdu:     NewPdu(),
+		Pdu: NewPdu(),
 	}
 
 	pdu.Pdu.Buffer = encoding.NewBuffer(data)
@@ -141,7 +142,7 @@ func (r *Response) DecodeNPCI() error {
 	}
 
 	r.ServiceChoice = r.NextOne()
-	r.MessageLength = r.NPDULength - uint16(l - r.Len())
+	r.MessageLength = r.NPDULength - uint16(l-r.Len())
 
 	return nil
 }

@@ -55,7 +55,7 @@ func NewServer(ifname string) (*Server, error) {
 		cHandlers:     make([]responseHandler, 255, 255),
 		ucHandlers:    make(map[types.UnconfirmedService]responseHandler),
 		networkSet:    ns,
-		Concurrency:   500,
+		Concurrency:   10,
 	}
 
 	return s, nil
@@ -147,6 +147,16 @@ func (s *Server) handle(data []byte, address *net.UDPAddr) {
 	case PduTypeComplexAck:
 		h := s.getConfirmedHandler(res.InvokeID)
 		if h != nil {
+			(*h)(res)
+		} else {
+			log.Printf("no handler was registered for invoke id %d, ignoring this message\n", res.InvokeID)
+		}
+		break
+
+	case PduTypeError, PduTypeReject, PduTypeAbort:
+		h := s.getConfirmedHandler(res.InvokeID)
+		if h != nil {
+			res.Failed = true
 			(*h)(res)
 		} else {
 			log.Printf("no handler was registered for invoke id %d, ignoring this message\n", res.InvokeID)

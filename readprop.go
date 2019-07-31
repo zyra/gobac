@@ -45,6 +45,17 @@ func (s *Server) SendReadPropertyRequest(object *Object, propertyId PropertyId, 
 		return nil
 
 	case data := <-c:
+		if data.Failed {
+			switch data.PduType {
+			case PduTypeError:
+				return errors.New("device responded with error")
+			case PduTypeAbort:
+				return errors.New("device aborted request")
+			case PduTypeReject:
+				return errors.New("device rejected request")
+			}
+		}
+
 		if err := data.DecodeReadPropertyApdu(object, propertyId, dest); err != nil {
 			return err
 		}

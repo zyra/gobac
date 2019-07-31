@@ -36,6 +36,9 @@ const (
 	PduTypeSimpleAck                         = 0x20
 	PduTypeComplexAck                        = 0x30
 	PduTypeSegmentAck                        = 0x40
+	PduTypeError                             = 0x50
+	PduTypeReject                            = 0x60
+	PduTypeAbort                             = 0x70
 )
 
 type ConfirmedService = byte
