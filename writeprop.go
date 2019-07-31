@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/zyra/gobac/types"
-	"time"
 )
 
 type writePropertyRequest struct {
@@ -46,30 +45,32 @@ func (s *Server) SendWritePropertyRequest(object *Object,
 
 	req.Target = object.Device.IPAddress
 
-	tc, c, h := getChanHandlerWithTimeout(time.Second * 30)
-	s.setConfirmedHandler(req.InvokeID, h)
-	defer s.removeConfirmedHandler(req.InvokeID)
+	//tc, c, h := getChanHandlerWithTimeout(time.Second * 30)
+	//s.setConfirmedHandler(req.InvokeID, h)
+	//defer s.removeConfirmedHandler(req.InvokeID)
 
 	req.Send()
 
-	select {
-	case <-tc:
-		return nil
+	//select {
+	//case <-tc:
+	//	return nil
+	//
+	//case data := <-c:
+	//	if data.Failed {
+	//		switch data.PduType {
+	//		case PduTypeError:
+	//			return errors.New("device responded with error")
+	//		case PduTypeAbort:
+	//			return errors.New("device aborted request")
+	//		case PduTypeReject:
+	//			return errors.New("device rejected request")
+	//		}
+	//	}
+	//
+	//	return nil
+	//}
 
-	case data := <-c:
-		if data.Failed {
-			switch data.PduType {
-			case PduTypeError:
-				return errors.New("device responded with error")
-			case PduTypeAbort:
-				return errors.New("device aborted request")
-			case PduTypeReject:
-				return errors.New("device rejected request")
-			}
-		}
-
-		return nil
-	}
+	return nil
 }
 
 func (d *writePropertyRequest) EncodeWritePropertyApdu() (err error) {

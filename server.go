@@ -144,6 +144,9 @@ func (s *Server) handle(data []byte, address *net.UDPAddr) {
 		}
 		break
 
+	case PduTypeSimpleAck:
+		break
+
 	case PduTypeComplexAck:
 		h := s.getConfirmedHandler(res.InvokeID)
 		if h != nil {
@@ -170,6 +173,10 @@ func (s *Server) handle(data []byte, address *net.UDPAddr) {
 }
 
 func (s *Server) getConfirmedHandler(invokeId uint8) *responseHandler {
+	if invokeId == 0 {
+		panic("shouldn't get invoke id 0")
+	}
+
 	if h := s.cHandlers[invokeId-1]; h != nil {
 		return &h
 	}

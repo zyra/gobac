@@ -13,7 +13,7 @@ var devices = make([]*Device, 0)
 var device *Device
 var objects = make([]*Object, 0)
 var isBench = os.Getenv("BENCH") != ""
-var ifname = "docker0"
+var ifname = "eno1.5"
 var err error
 
 func TestNewServer(t *testing.T) {
@@ -64,7 +64,7 @@ type stats struct {
 func TestObjects(t *testing.T) {
 	if isBench {
 		twg := &sync.WaitGroup{}
-		s := &stats{0,0}
+		s := &stats{0, 0}
 
 		fmt.Printf("going to get objects from %d devices\n", len(devices))
 
@@ -145,7 +145,69 @@ func TestWrite(t *testing.T) {
 			t.Error(err)
 			t.FailNow()
 		}
-
 		fmt.Println("Read the same prop again")
 	}
+}
+
+func TestServer_SendCovRequest(t *testing.T) {
+	if len(objects) == 0 {
+		t.Error("objects array has length of 0")
+		t.FailNow()
+	}
+
+	var obj *Object
+
+	for _, o := range objects {
+		if o.Type == types.PROP_ACTION_TEXT {
+			obj = o
+			break
+		}
+	}
+
+	if obj == nil {
+		t.Error("couldn't find an AO obj")
+		t.FailNow()
+	}
+
+	prop, err := obj.GetProperty(types.PROP_PRESENT_VALUE)
+
+	if err != nil {
+		t.Error(err)
+		t.FailNow()
+	}
+
+	data := make(chan *Property, 5000)
+	e := make(chan error, 5000)
+	done := make(chan int, 5000)
+
+	server.SendCovRequest(prop.Object, 50, data, e, done)
+
+	//if err := prop.SetValue(TagReal, 2); err != nil {
+	//	t.Error(err)
+	//} else {
+		select {
+		case prop := <-data:
+			fmt.Println("Got a property!", prop)
+			if prop.Values == nil || len(*prop.Values) == 0 {
+				t.Error("values are empty or null")
+				t.FailNow()
+			}
+
+			if (*prop.Values)[0].Value.(float32) != 2 {
+				t.Errorf("expected value to be %d, got %f", 2, (*prop.Values)[0].Value.(float32))
+				t.FailNow()
+			}
+
+			fmt.Println("all good!")
+			break
+
+		case err = <-e:
+			t.Error(err)
+			t.FailNow()
+
+		case _ = <-done:
+			fmt.Println("received done signal?")
+			break
+		}
+	//}
 }

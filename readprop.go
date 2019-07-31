@@ -12,7 +12,9 @@ type readPropertyRequest struct {
 	propertyId PropertyId
 }
 
-func (s *Server) SendReadPropertyRequest(object *Object, propertyId PropertyId, dest *Property) error {
+func (s *Server) SendReadPropertyRequest(object *Object,
+	propertyId PropertyId,
+	dest *Property) error {
 	req := &readPropertyRequest{
 		Request:    NewRequest(s),
 		propertyId: propertyId,
@@ -36,7 +38,6 @@ func (s *Server) SendReadPropertyRequest(object *Object, propertyId PropertyId, 
 	tc, c, h := getChanHandlerWithTimeout(time.Second * 30)
 	s.setConfirmedHandler(req.InvokeID, h)
 	defer s.removeConfirmedHandler(req.InvokeID)
-
 
 	req.Send()
 

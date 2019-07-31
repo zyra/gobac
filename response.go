@@ -112,8 +112,11 @@ func (r *Response) DecodeNPCI() error {
 	case PduTypeUnconfirmedServiceRequest:
 		break
 
+	case PduTypeSegmentAck:
+		fallthrough
 	case PduTypeConfirmedServiceRequest:
-		panic("shouldnt really get here..")
+		fmt.Println("shouldnt really get here..")
+		break
 
 	case PduTypeSimpleAck:
 		fmt.Println("Got a simple ack.. ignoring it for now since it's useless")
@@ -134,8 +137,9 @@ func (r *Response) DecodeNPCI() error {
 
 		break
 
-	case PduTypeSegmentAck:
-		panic("unhandled")
+	case PduTypeError, PduTypeReject, PduTypeAbort:
+		fmt.Println("got an err")
+		break
 
 	default:
 		return fmt.Errorf("unsupported pdu type: %x", r.PduType)
