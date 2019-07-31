@@ -3,10 +3,11 @@ package gobac
 import "github.com/zyra/gobac/types"
 
 type Object struct {
-	Device   *Device
-	Type     types.ObjectType
-	Instance uint16
-	IsDevice bool
+	Device       *Device
+	Type         types.ObjectType
+	Instance     uint16
+	IsDevice     bool
+	PresentValue *Property
 }
 
 func (o *Object) GetProperty(id PropertyId) (*Property, error) {
