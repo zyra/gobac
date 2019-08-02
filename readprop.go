@@ -35,7 +35,7 @@ func (s *Server) SendReadPropertyRequest(object *Object,
 
 	req.Target = object.Device.IPAddress
 
-	tc, c, h := getChanHandlerWithTimeout(time.Second * 30)
+	tc, c, h := getChanHandlerWithTimeout(time.Second * 15)
 	s.setConfirmedHandler(req.InvokeID, h)
 	defer s.removeConfirmedHandler(req.InvokeID)
 
@@ -43,7 +43,7 @@ func (s *Server) SendReadPropertyRequest(object *Object,
 
 	select {
 	case <-tc:
-		return nil
+		return errors.New("timeout or unhandled error")
 
 	case data := <-c:
 		if data.Failed {
@@ -182,7 +182,7 @@ func (r *Response) DecodePropertyValue(dest *PropertyValue) {
 		break
 
 	case TagCharacterString:
-		dest.Value = r.DecodeCharacterString(lenValue)
+		dest.Value = r.DecodeCharacterString(lenValue - 1)
 		break
 
 	case TagBitString:

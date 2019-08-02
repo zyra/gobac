@@ -1,6 +1,7 @@
 package gobac
 
 import (
+	"fmt"
 	"github.com/zyra/gobac/encoding"
 	"github.com/zyra/gobac/types"
 	"log"
@@ -174,7 +175,8 @@ func (s *Server) handle(data []byte, address *net.UDPAddr) {
 
 func (s *Server) getConfirmedHandler(invokeId uint8) *responseHandler {
 	if invokeId == 0 {
-		panic("shouldn't get invoke id 0")
+		fmt.Println("shouldn't get invoke id 0")
+		return nil
 	}
 
 	if h := s.cHandlers[invokeId-1]; h != nil {

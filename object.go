@@ -8,6 +8,7 @@ type Object struct {
 	Instance     uint16
 	IsDevice     bool
 	PresentValue *Property
+	Description  string
 }
 
 func (o *Object) GetProperty(id PropertyId) (*Property, error) {

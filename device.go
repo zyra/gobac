@@ -11,7 +11,7 @@ type Device struct {
 	Server          *Server
 	IPAddress       *net.IP
 	MACAddress      *net.HardwareAddr
-	DeviceID        uint32
+	DeviceID        uint16
 	MaxAPDU         uint32
 	OriginInterface string
 	VendorID        uint16

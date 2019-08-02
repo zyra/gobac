@@ -86,6 +86,7 @@ func (r *Response) DecodeIAmApdu(dest *Device) error {
 
 	dest.Type = objectType
 	dest.Instance = objectInstance
+	dest.DeviceID = objectInstance
 
 	// Max APDU
 	tagNumber, lenValue = r.DecodeTag()

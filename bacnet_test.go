@@ -13,7 +13,7 @@ var devices = make([]*Device, 0)
 var device *Device
 var objects = make([]*Object, 0)
 var isBench = os.Getenv("BENCH") != ""
-var ifname = "eno1.5"
+var ifname = "docker0"
 var err error
 
 func TestNewServer(t *testing.T) {
@@ -85,8 +85,6 @@ func TestObjects(t *testing.T) {
 		twg.Wait()
 
 		fmt.Printf("Total success: %d\nTotal failure: %d\n", s.s, s.f)
-
-		return
 	}
 
 	if device == nil {
@@ -145,69 +143,95 @@ func TestWrite(t *testing.T) {
 			t.Error(err)
 			t.FailNow()
 		}
+
+		if (*prop.Values)[0].Value != float32(3) {
+			t.Error("value didnt change")
+			t.FailNow()
+		}
 		fmt.Println("Read the same prop again")
 	}
 }
 
-func TestServer_SendCovRequest(t *testing.T) {
-	if len(objects) == 0 {
-		t.Error("objects array has length of 0")
-		t.FailNow()
-	}
+func TestReadAll(t *testing.T) {
+	for i, o := range objects {
+		if i == 0 {
+			// skip device
+			continue
+		}
 
-	var obj *Object
+		fmt.Printf("> processing %d out of %d\n", i, len(objects))
 
-	for _, o := range objects {
-		if o.Type == types.PROP_ACTION_TEXT {
-			obj = o
-			break
+		if _, err := o.GetProperty(types.PROP_PRESENT_VALUE); err != nil {
+			fmt.Println(err)
+		}
+
+		if p, err := o.GetProperty(types.PROP_DESCRIPTION); err != nil {
+			fmt.Println(err)
+		} else {
+			fmt.Printf("> Description is %s\n", (*p.Values)[0].Value)
 		}
 	}
-
-	if obj == nil {
-		t.Error("couldn't find an AO obj")
-		t.FailNow()
-	}
-
-	prop, err := obj.GetProperty(types.PROP_PRESENT_VALUE)
-
-	if err != nil {
-		t.Error(err)
-		t.FailNow()
-	}
-
-	data := make(chan *Property, 5000)
-	e := make(chan error, 5000)
-	done := make(chan int, 5000)
-
-	server.SendCovRequest(prop.Object, 50, data, e, done)
-
-	//if err := prop.SetValue(TagReal, 2); err != nil {
-	//	t.Error(err)
-	//} else {
-		select {
-		case prop := <-data:
-			fmt.Println("Got a property!", prop)
-			if prop.Values == nil || len(*prop.Values) == 0 {
-				t.Error("values are empty or null")
-				t.FailNow()
-			}
-
-			if (*prop.Values)[0].Value.(float32) != 2 {
-				t.Errorf("expected value to be %d, got %f", 2, (*prop.Values)[0].Value.(float32))
-				t.FailNow()
-			}
-
-			fmt.Println("all good!")
-			break
-
-		case err = <-e:
-			t.Error(err)
-			t.FailNow()
-
-		case _ = <-done:
-			fmt.Println("received done signal?")
-			break
-		}
-	//}
 }
+
+//func TestServer_SendCovRequest(t *testing.T) {
+//	if len(objects) == 0 {
+//		t.Error("objects array has length of 0")
+//		t.FailNow()
+//	}
+//
+//	var obj *Object
+//
+//	for _, o := range objects {
+//		if o.Type == types.PROP_ACTION_TEXT {
+//			obj = o
+//			break
+//		}
+//	}
+//
+//	if obj == nil {
+//		t.Error("couldn't find an AO obj")
+//		t.FailNow()
+//	}
+//
+//	prop, err := obj.GetProperty(types.PROP_PRESENT_VALUE)
+//
+//	if err != nil {
+//		t.Error(err)
+//		t.FailNow()
+//	}
+//
+//	data := make(chan *Property, 5000)
+//	e := make(chan error, 5000)
+//	done := make(chan int, 5000)
+//
+//	server.SendCovRequest(prop.Object, 50, data, e, done)
+//
+//	//if err := prop.SetValue(TagReal, 2); err != nil {
+//	//	t.Error(err)
+//	//} else {
+//		select {
+//		case prop := <-data:
+//			fmt.Println("Got a property!", prop)
+//			if prop.Values == nil || len(*prop.Values) == 0 {
+//				t.Error("values are empty or null")
+//				t.FailNow()
+//			}
+//
+//			if (*prop.Values)[0].Value.(float32) != 2 {
+//				t.Errorf("expected value to be %d, got %f", 2, (*prop.Values)[0].Value.(float32))
+//				t.FailNow()
+//			}
+//
+//			fmt.Println("all good!")
+//			break
+//
+//		case err = <-e:
+//			t.Error(err)
+//			t.FailNow()
+//
+//		case _ = <-done:
+//			fmt.Println("received done signal?")
+//			break
+//		}
+//	//}
+//}

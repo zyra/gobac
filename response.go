@@ -138,7 +138,7 @@ func (r *Response) DecodeNPCI() error {
 		break
 
 	case PduTypeError, PduTypeReject, PduTypeAbort:
-		fmt.Println("got an err")
+		r.InvokeID = r.NextOne()
 		break
 
 	default:

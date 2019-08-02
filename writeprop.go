@@ -158,11 +158,43 @@ func (d *writePropertyRequest) EncodeData() (err error) {
 			err = d.EncodeReal(d.value.(float32))
 			break
 
-		case int8, int16, int32, int64, int:
+		case int8:
+			err = d.EncodeReal(float32(d.value.(int8)))
+			break
+
+		case int16:
+			err = d.EncodeReal(float32(d.value.(int16)))
+			break
+
+		case int32:
+			err = d.EncodeReal(float32(d.value.(int32)))
+			break
+
+		case int64:
+			err = d.EncodeReal(float32(d.value.(int64)))
+			break
+
+		case int:
 			err = d.EncodeReal(float32(d.value.(int)))
 			break
 
-		case uint8, uint16, uint32, uint64, uint:
+		case uint8:
+			err = d.EncodeReal(float32(d.value.(uint8)))
+			break
+
+		case uint16:
+			err = d.EncodeReal(float32(d.value.(uint16)))
+			break
+
+		case uint32:
+			err = d.EncodeReal(float32(d.value.(uint32)))
+			break
+
+		case uint64:
+			err = d.EncodeReal(float32(d.value.(uint64)))
+			break
+
+		case uint:
 			err = d.EncodeReal(float32(d.value.(uint)))
 			break
 		default:
@@ -181,11 +213,43 @@ func (d *writePropertyRequest) EncodeData() (err error) {
 			err = d.EncodeDouble(d.value.(float64))
 			break
 
-		case int8, int16, int32, int64, int:
+		case int8:
+			err = d.EncodeDouble(float64(d.value.(int8)))
+			break
+
+		case int16:
+			err = d.EncodeDouble(float64(d.value.(int16)))
+			break
+
+		case int32:
+			err = d.EncodeDouble(float64(d.value.(int32)))
+			break
+
+		case int64:
+			err = d.EncodeDouble(float64(d.value.(int64)))
+			break
+
+		case int:
 			err = d.EncodeDouble(float64(d.value.(int)))
 			break
 
-		case uint8, uint16, uint32, uint64, uint:
+		case uint8:
+			err = d.EncodeDouble(float64(d.value.(uint8)))
+			break
+
+		case uint16:
+			err = d.EncodeDouble(float64(d.value.(uint16)))
+			break
+
+		case uint32:
+			err = d.EncodeDouble(float64(d.value.(uint32)))
+			break
+
+		case uint64:
+			err = d.EncodeDouble(float64(d.value.(uint64)))
+			break
+
+		case uint:
 			err = d.EncodeDouble(float64(d.value.(uint)))
 			break
 		default:

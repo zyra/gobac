@@ -11,7 +11,7 @@ func (buf *Buffer) EncodeObjectId(objectType types.ObjectType, objectInstance ui
 	return buf.EncodeUnsigned32(octet)
 }
 
-func (buf *Buffer) DecodeObjectId() (objectType uint16, objectInstance uint16) {
+func (buf *Buffer) DecodeObjectId() (objectType types.ObjectType, objectInstance uint16) {
 	value := DecodeUnsigned32(buf.Next(4))
 	objectType = uint16((value >> types.BACNET_INSTANCE_BITS) & types.BACNET_MAX_OBJECT)
 	objectInstance = uint16(value & types.BACNET_MAX_INSTANCE)
