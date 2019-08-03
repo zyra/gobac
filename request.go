@@ -1,7 +1,6 @@
 package gobac
 
 import (
-	"fmt"
 	"github.com/zyra/gobac/encoding"
 	"github.com/zyra/gobac/types"
 	"log"
@@ -9,26 +8,28 @@ import (
 
 type Request struct {
 	*Pdu
-	Server            *Server
-	IsBroadcastTarget bool
+	Server      *Server
+	IsConfirmed bool
+	err         chan error
+	data        chan *Response
+	done        chan struct{}
 }
 
-func NewRequest(s *Server) *Request {
-	req := &Request{
-		Pdu:               NewPdu(),
-		Server:            s,
-		IsBroadcastTarget: true,
+func (s *Server) NewRequest() Request {
+	req := Request{
+		Pdu:    NewPdu(),
+		Server: s,
+		done:   make(chan struct{}),
 	}
 
 	req.Source = s.IPv4
 	req.SourcePort = s.ServerPort
 	req.Target = s.BroadcastIPv4
 	req.TargetPort = s.BroadcastPort
-
 	return req
 }
 
-func (d *Request) EncodeNpdu() {
+func (d *Request) EncodeNPCI() {
 	var b byte
 
 	_ = d.AppendByte(d.ProtocolVersion)
@@ -39,7 +40,7 @@ func (d *Request) EncodeNpdu() {
 		b |= types.BIT7
 	}
 
-	if d.IsBroadcastTarget {
+	if !d.IsConfirmed {
 		b |= types.BIT5
 	}
 
@@ -52,7 +53,7 @@ func (d *Request) EncodeNpdu() {
 	_ = d.AppendByte(b)
 
 	// Broadcast
-	if d.IsBroadcastTarget {
+	if !d.IsConfirmed {
 		_ = d.EncodeUnsigned16(65535)
 		_ = d.AppendByte(0)
 		_ = d.AppendByte(d.HopCount)
@@ -63,44 +64,47 @@ func (d *Request) EncodeNpdu() {
 	}
 }
 
-func (d *Request) EncodeContext(tag uint8, value uint32) {
-	var tagLen uint32 = 0
-
-	if value < 0x100 {
-		tagLen = 1
-	} else if value < 0x10000 {
-		tagLen = 2
-	} else if value < 0x1000000 {
-		tagLen = 3
-	} else {
-		tagLen = 4
-	}
-
-	_ = d.EncodeTag(tag, true, tagLen)
-	_ = d.EncodeUnsigned(value)
-}
-
-func (d *Request) Send() {
+func (d *Request) EncodeHeaders() error {
 	buff := encoding.NewBuffer()
 
-	_ = buff.AppendByte(0x81)
+	err := buff.AppendByte(0x81)
 
-	if d.IsBroadcastTarget {
-		_ = buff.AppendByte(types.BVLC_ORIGINAL_BROADCAST_NPDU)
+	if d.IsConfirmed {
+		err = buff.AppendByte(types.BVLC_ORIGINAL_UNICAST_NPDU)
 	} else {
-		_ = buff.AppendByte(types.BVLC_ORIGINAL_UNICAST_NPDU)
+		err = buff.AppendByte(types.BVLC_ORIGINAL_BROADCAST_NPDU)
 	}
 
-	_ = buff.EncodeUnsigned16(uint16(d.Len()) + 4)
-	_ = buff.AppendBytes(d.Bytes())
+	err = buff.EncodeUnsigned16(uint16(len(d.Bytes())) + 4)
+	err = buff.AppendBytes(d.Bytes())
 
-	d.SendMDPU(buff)
+	d.Buffer = buff
+
+	return err
 }
 
-func (d *Request) SendMDPU(mtu *encoding.Buffer) {
+func (d *Request) Send() error {
 	destUdp := getUdpAddr(d.Target, d.TargetPort)
-
-	if err := d.Server.SendMPDU(mtu, destUdp); err != nil {
-		fmt.Println("Error sending MDPU", err)
+	if err := d.EncodeHeaders(); err != nil {
+		return err
 	}
+	return d.Server.Send(d.Buffer, destUdp)
+}
+
+func (d *Request) closeChans() {
+	close(d.err)
+	close(d.data)
+	close(d.done)
+}
+
+func (d *Request) Data() <-chan *Response {
+	return d.data
+}
+
+func (d *Request) Error() <-chan error {
+	return d.err
+}
+
+func (d *Request) Done() <-chan struct{} {
+	return d.done
 }

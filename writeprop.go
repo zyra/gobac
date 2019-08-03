@@ -4,14 +4,15 @@ import (
 	"errors"
 	"fmt"
 	"github.com/zyra/gobac/types"
+	"time"
 )
 
-type writePropertyRequest struct {
-	*Request
-	object       *Object
-	propertyId   PropertyId
-	propertyType DataTag
-	value        interface{}
+type WritePropertyRequest struct {
+	ConfirmedRequest
+	object     *Object
+	propertyId PropertyId
+	tag        DataTag
+	value      interface{}
 }
 
 func (s *Server) SendWritePropertyRequest(object *Object,
@@ -19,22 +20,19 @@ func (s *Server) SendWritePropertyRequest(object *Object,
 	propertyType DataTag,
 	priority uint8,
 	value interface{}) error {
-	req := &writePropertyRequest{
-		Request:      NewRequest(s),
-		propertyId:   propertyId,
-		object:       object,
-		propertyType: propertyType,
-		value:        value,
+	req := &WritePropertyRequest{
+		ConfirmedRequest: s.NewConfirmedRequest(),
+		propertyId:       propertyId,
+		object:           object,
+		tag:              propertyType,
+		value:            value,
 	}
 
+	defer req.Cleanup()
+
 	req.Priority = priority
+	req.Target = object.Device.IPAddress
 
-	req.InvokeID = NewTransaction()
-	defer ReleaseTransaction(req.InvokeID)
-
-	req.ExpectingReply = true
-	req.IsBroadcastTarget = false
-	req.EncodeNpdu()
 	if err := req.EncodeWritePropertyApdu(); err != nil {
 		return err
 	}
@@ -43,37 +41,37 @@ func (s *Server) SendWritePropertyRequest(object *Object,
 		return errors.New("request size exceeds destination's max APDU")
 	}
 
-	req.Target = object.Device.IPAddress
+	if err := req.Send(); err != nil {
+		return err
+	}
 
-	//tc, c, h := getChanHandlerWithTimeout(time.Second * 30)
-	//s.setConfirmedHandler(req.InvokeID, h)
-	//defer s.removeConfirmedHandler(req.InvokeID)
+	tc := time.After(s.DefaultTimeout)
 
-	req.Send()
+	select {
+	case <-tc:
+		return errors.New("DefaultTimeout")
 
-	//select {
-	//case <-tc:
-	//	return nil
-	//
-	//case data := <-c:
-	//	if data.Failed {
-	//		switch data.PduType {
-	//		case PduTypeError:
-	//			return errors.New("device responded with error")
-	//		case PduTypeAbort:
-	//			return errors.New("device aborted request")
-	//		case PduTypeReject:
-	//			return errors.New("device rejected request")
-	//		}
-	//	}
-	//
-	//	return nil
-	//}
+	case data := <-req.Data():
+		switch data.PduType {
+		case PduTypeSimpleAck:
+			// Write was successful!
+			return nil
+		case PduTypeError:
+			return errors.New("device responded with error")
+		case PduTypeAbort:
+			return errors.New("device aborted request")
+		case PduTypeReject:
+			return errors.New("device rejected request")
+		default:
+			fmt.Println("unhandled pdu type!")
+			return nil
+		}
+	}
 
-	return nil
+	//return nil
 }
 
-func (d *writePropertyRequest) EncodeWritePropertyApdu() (err error) {
+func (d *WritePropertyRequest) EncodeWritePropertyApdu() (err error) {
 	err = d.AppendByte(PduTypeConfirmedServiceRequest)
 	err = d.AppendByte(5)
 	err = d.AppendByte(d.InvokeID)
@@ -82,14 +80,42 @@ func (d *writePropertyRequest) EncodeWritePropertyApdu() (err error) {
 	err = d.EncodeTag(TagContextObjectId, true, 4)
 	err = d.EncodeObjectId(d.object.Type, d.object.Instance)
 
-	var lenValue uint32 = 1
-
-	if d.propertyId > 0x100 {
-		lenValue++
-	}
+	lenValue := getUnsignedLen(uint(d.propertyId))
 
 	err = d.EncodeTag(TagContextPropertyId, true, lenValue)
-	err = d.AppendByte(uint8(d.propertyId))
+	err = d.EncodeUnsigned(uint32(d.propertyId))
+
+	//
+	// Set index
+	//
+	// Index can only be set on array types
+	// Let's check the property type first to see if it's an array type
+	switch d.propertyId {
+	case PropPriorityArray,
+		PropEventTimeStamps,
+		PropAction,
+		PropObjectList,
+		PropListOfObjectPropertyReferences,
+		PropNegativeAccessRules,
+		PropPositiveAccessRules,
+		PropShedLevelDescriptions,
+		PropShedLevels,
+		PropAccessDoors,
+		PropAuthenticationFactors,
+		PropAssignedAccessRights,
+		PropSupportedFormatClasses,
+		PropSupportedFormats,
+		PropStateChangeValues,
+		PropSubordinateNodeTypes,
+		PropProtocolObjectTypesSupported,
+		PropWeeklySchedule:
+		// these guys can have an index
+		// set index to 1
+		// TODO make index configurable
+		err = d.EncodeTag(TagContextPropertyArrayIndex, true, 1)
+		err = d.AppendByte(0x1)
+		break
+	}
 
 	err = d.EncodeOpeningTag(TagContextPropertyValue)
 
@@ -105,10 +131,10 @@ func (d *writePropertyRequest) EncodeWritePropertyApdu() (err error) {
 	return err
 }
 
-func (d *writePropertyRequest) EncodeData() (err error) {
-	invalidVal := fmt.Errorf("invalid value %x for type %x", d.value, d.propertyType)
+func (d *WritePropertyRequest) EncodeData() (err error) {
+	invalidVal := fmt.Errorf("invalid value %x for type %x", d.value, d.tag)
 
-	switch d.propertyType {
+	switch d.tag {
 	case TagNull:
 		break
 
@@ -155,7 +181,7 @@ func (d *writePropertyRequest) EncodeData() (err error) {
 			break
 
 		case float64:
-			err = d.EncodeReal(d.value.(float32))
+			err = d.EncodeReal(float32(d.value.(float64)))
 			break
 
 		case int8:

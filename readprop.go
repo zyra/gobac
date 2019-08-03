@@ -6,8 +6,8 @@ import (
 	"time"
 )
 
-type readPropertyRequest struct {
-	*Request
+type ReadPropertyRequest struct {
+	ConfirmedRequest
 	object     *Object
 	propertyId PropertyId
 }
@@ -15,37 +15,35 @@ type readPropertyRequest struct {
 func (s *Server) SendReadPropertyRequest(object *Object,
 	propertyId PropertyId,
 	dest *Property) error {
-	req := &readPropertyRequest{
-		Request:    NewRequest(s),
+	req := &ReadPropertyRequest{
+		ConfirmedRequest:    s.NewConfirmedRequest(),
 		propertyId: propertyId,
 		object:     object,
 	}
+	req.Target = object.Device.IPAddress
 
-	req.InvokeID = NewTransaction()
-	defer ReleaseTransaction(req.InvokeID)
+	defer req.Cleanup()
 
-	req.ExpectingReply = true
-	req.IsBroadcastTarget = false
-	req.EncodeNpdu()
-	req.EncodeReadPropertyApdu()
+	if err := req.EncodeReadPropertyApdu(); err != nil {
+		return err
+	}
 
 	if req.Len() >= int(object.Device.MaxAPDU) {
 		return errors.New("request size exceeds destination's max APDU")
 	}
 
-	req.Target = object.Device.IPAddress
 
-	tc, c, h := getChanHandlerWithTimeout(time.Second * 15)
-	s.setConfirmedHandler(req.InvokeID, h)
-	defer s.removeConfirmedHandler(req.InvokeID)
+	if err := req.Send(); err != nil {
+		return err
+	}
 
-	req.Send()
+	tc := time.After(s.DefaultTimeout)
 
 	select {
 	case <-tc:
-		return errors.New("timeout or unhandled error")
+		return errors.New("timeout")
 
-	case data := <-c:
+	case data := <-req.Data():
 		if data.Failed {
 			switch data.PduType {
 			case PduTypeError:
@@ -65,14 +63,14 @@ func (s *Server) SendReadPropertyRequest(object *Object,
 	return nil
 }
 
-func (d *readPropertyRequest) EncodeReadPropertyApdu() {
-	_ = d.AppendByte(PduTypeConfirmedServiceRequest)
-	_ = d.AppendByte(5)
-	_ = d.AppendByte(d.InvokeID)
-	_ = d.AppendByte(ConfirmedServiceReadProperty)
+func (d *ReadPropertyRequest) EncodeReadPropertyApdu() (err error) {
+	err = d.AppendByte(PduTypeConfirmedServiceRequest)
+	err = d.AppendByte(5)
+	err = d.AppendByte(d.InvokeID)
+	err = d.AppendByte(ConfirmedServiceReadProperty)
 
-	_ = d.EncodeTag(0, true, 4)
-	_ = d.EncodeObjectId(d.object.Type, d.object.Instance)
+	err = d.EncodeTag(0, true, 4)
+	err = d.EncodeObjectId(d.object.Type, d.object.Instance)
 
 	var lenValue uint32 = 1
 
@@ -80,8 +78,10 @@ func (d *readPropertyRequest) EncodeReadPropertyApdu() {
 		lenValue++
 	}
 
-	_ = d.EncodeTag(1, true, lenValue)
-	_ = d.AppendByte(uint8(d.propertyId))
+	err = d.EncodeTag(1, true, lenValue)
+	err = d.AppendByte(uint8(d.propertyId))
+
+	return err
 }
 
 func (r *Response) DecodeReadPropertyApdu(object *Object, propertyId PropertyId, dest *Property) error {

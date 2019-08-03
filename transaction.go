@@ -7,7 +7,7 @@ import (
 var transactions = make([]bool, 255)
 var mtx sync.RWMutex
 
-func NewTransaction() uint8 {
+func GetInvokeID() uint8 {
 	var invokeId uint8 = 0
 	var i uint8
 
@@ -24,13 +24,13 @@ func NewTransaction() uint8 {
 
 	if invokeId == 0 {
 		//log.Println("There isn't an invoke ID available, sleeping for 3 seconds and retrying...")
-		return NewTransaction()
+		return GetInvokeID()
 	}
 
 	return invokeId
 }
 
-func ReleaseTransaction(invokeId uint8) {
+func ReleaseInvokeID(invokeId uint8) {
 	mtx.Lock()
 	transactions[invokeId] = false
 	mtx.Unlock()

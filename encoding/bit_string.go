@@ -13,7 +13,7 @@ func (buf *Buffer) EncodeBitString(val []byte) error {
 }
 
 func (buf *Buffer) DecodeBitString(lenValue uint32) (out []byte) {
-	_ = buf.NextOne() // Unused bytes
+	_ = buf.NextOne()
 	bytes := buf.Next(int(lenValue - 1))
 	out = make([]byte, lenValue-1)
 

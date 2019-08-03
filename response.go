@@ -28,7 +28,7 @@ func NewResponse(data []byte) *Response {
 	return pdu
 }
 
-func (r *Response) DecodeBVLC() error {
+func (r *Response) DecodeHeader() error {
 	r.ProtocolType = r.NextOne()
 
 	if r.ProtocolType != BACnetProtocol {
@@ -113,13 +113,18 @@ func (r *Response) DecodeNPCI() error {
 		break
 
 	case PduTypeSegmentAck:
+		fmt.Println("Got a segment ack and I don't know how to handle this")
 		fallthrough
 	case PduTypeConfirmedServiceRequest:
 		fmt.Println("shouldnt really get here..")
 		break
 
 	case PduTypeSimpleAck:
-		fmt.Println("Got a simple ack.. ignoring it for now since it's useless")
+		bytes := r.Bytes()
+		if len(bytes) == 2 {
+			r.InvokeID = r.NextOne()
+		}
+		r.ServiceChoice = r.NextOne()
 		break
 
 	case PduTypeComplexAck:
@@ -152,11 +157,13 @@ func (r *Response) DecodeNPCI() error {
 }
 
 func (r *Response) Decode() error {
-	if err := r.DecodeBVLC(); err != nil {
+	if err := r.DecodeHeader(); err != nil {
+		r.Valid = false
 		return err
 	}
 
 	if err := r.DecodeNPCI(); err != nil {
+		r.Valid = false
 		return err
 	}
 

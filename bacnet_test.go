@@ -17,7 +17,8 @@ var ifname = "docker0"
 var err error
 
 func TestNewServer(t *testing.T) {
-	server, err = NewServer(ifname)
+	config := NewServerConfig().SetInterfaceName(ifname)
+	server, err = NewServer(config)
 
 	if err != nil {
 		t.Error(err)
@@ -29,7 +30,11 @@ func TestNewServer(t *testing.T) {
 		t.FailNow()
 	}
 
-	server.Listen()
+	fmt.Println("Starting Server..")
+	go server.Listen(nil)
+
+	<-server.Start()
+	fmt.Println("Server started")
 }
 
 func TestScan(t *testing.T) {
@@ -49,9 +54,9 @@ func TestScan(t *testing.T) {
 
 	fmt.Printf("Found %d devices\n", dLen)
 
-	//for _, d := range devices {
-	//fmt.Printf("> Device ID: %d\n", d.Instance)
-	//}
+	for _, d := range devices {
+		fmt.Printf("> Device ID: %d\n", d.Instance)
+	}
 
 	device = devices[0]
 }
@@ -69,17 +74,17 @@ func TestObjects(t *testing.T) {
 		fmt.Printf("going to get objects from %d devices\n", len(devices))
 
 		for i := 0; i < len(devices); i++ {
-			twg.Add(1)
-			go func(wg *sync.WaitGroup, device *Device, s *stats) {
-				defer wg.Done()
-				objects := make([]*Object, 0)
-				if err := device.GetObjects(&objects); err != nil {
-					fmt.Printf("error getting objects: %s\n", err)
-					s.f++
-				} else {
-					s.s++
-				}
-			}(twg, devices[i], s)
+			//twg.Add(1)
+			//go func(wg *sync.WaitGroup, device *Device, s *stats) {
+			//	defer wg.Done()
+			objects := make([]*Object, 0)
+			if err := device.GetObjects(&objects); err != nil {
+				fmt.Printf("error getting objects: %s\n", err)
+				s.f++
+			} else {
+				s.s++
+			}
+			//}(twg, devices[i], s)
 		}
 
 		twg.Wait()
@@ -107,6 +112,7 @@ func TestObjects(t *testing.T) {
 }
 
 func TestWrite(t *testing.T) {
+	//return
 	if len(objects) == 0 {
 		t.Error("objects array has length of 0")
 		t.FailNow()
@@ -133,7 +139,7 @@ func TestWrite(t *testing.T) {
 		t.FailNow()
 	}
 
-	if err := prop.SetValue(TagReal, 3); err != nil {
+	if err := prop.SetValue(TagReal, 1); err != nil {
 		t.Error(err)
 	} else {
 		fmt.Println("Wrote prop to obj!")
@@ -144,7 +150,7 @@ func TestWrite(t *testing.T) {
 			t.FailNow()
 		}
 
-		if (*prop.Values)[0].Value != float32(3) {
+		if (*prop.Values)[0].Value != float32(1) {
 			t.Error("value didnt change")
 			t.FailNow()
 		}
@@ -153,6 +159,7 @@ func TestWrite(t *testing.T) {
 }
 
 func TestReadAll(t *testing.T) {
+	//return
 	for i, o := range objects {
 		if i == 0 {
 			// skip device
@@ -173,65 +180,68 @@ func TestReadAll(t *testing.T) {
 	}
 }
 
-//func TestServer_SendCovRequest(t *testing.T) {
-//	if len(objects) == 0 {
-//		t.Error("objects array has length of 0")
-//		t.FailNow()
-//	}
-//
-//	var obj *Object
-//
-//	for _, o := range objects {
-//		if o.Type == types.PROP_ACTION_TEXT {
-//			obj = o
-//			break
-//		}
-//	}
-//
-//	if obj == nil {
-//		t.Error("couldn't find an AO obj")
-//		t.FailNow()
-//	}
-//
-//	prop, err := obj.GetProperty(types.PROP_PRESENT_VALUE)
-//
-//	if err != nil {
-//		t.Error(err)
-//		t.FailNow()
-//	}
-//
-//	data := make(chan *Property, 5000)
-//	e := make(chan error, 5000)
-//	done := make(chan int, 5000)
-//
-//	server.SendCovRequest(prop.Object, 50, data, e, done)
-//
-//	//if err := prop.SetValue(TagReal, 2); err != nil {
-//	//	t.Error(err)
-//	//} else {
-//		select {
-//		case prop := <-data:
-//			fmt.Println("Got a property!", prop)
-//			if prop.Values == nil || len(*prop.Values) == 0 {
-//				t.Error("values are empty or null")
-//				t.FailNow()
-//			}
-//
-//			if (*prop.Values)[0].Value.(float32) != 2 {
-//				t.Errorf("expected value to be %d, got %f", 2, (*prop.Values)[0].Value.(float32))
-//				t.FailNow()
-//			}
-//
-//			fmt.Println("all good!")
-//			break
-//
-//		case err = <-e:
-//			t.Error(err)
-//			t.FailNow()
-//
-//		case _ = <-done:
-//			fmt.Println("received done signal?")
-//			break
-//		}
-//	//}
-//}
+func TestServer_SendCovRequest(t *testing.T) {
+	if len(objects) == 0 {
+		t.Error("objects array has length of 0")
+		t.FailNow()
+	}
+
+	var obj *Object
+
+	for _, o := range objects {
+		if o.Type == types.OBJECT_ANALOG_VALUE {
+			obj = o
+			break
+		}
+	}
+
+	if obj == nil {
+		t.Error("couldn't find an AO obj")
+		t.FailNow()
+	}
+
+	prop, err := obj.GetProperty(types.PROP_PRESENT_VALUE)
+
+	if err != nil {
+		t.Error(err)
+		t.FailNow()
+	}
+
+	req, err := server.SendCovRequest(prop.Object, 2)
+
+	if err != nil {
+		t.Error(err)
+		t.FailNow()
+	}
+
+	fmt.Println("sent cov req")
+
+	//if err := prop.SetValue(TagReal, 2); err != nil {
+	//	t.Error(err)
+	//} else {
+	select {
+	case prop := <-req.Data():
+		fmt.Println("Got a property!", prop)
+		if prop.Values == nil || len(*prop.Values) == 0 {
+			t.Error("values are empty or null")
+			t.FailNow()
+		}
+
+		if (*prop.Values)[0].Value.(float32) != 2 {
+			t.Errorf("expected value to be %d, got %f", 2, (*prop.Values)[0].Value.(float32))
+			t.FailNow()
+		}
+
+		fmt.Println("all good!")
+		break
+
+	case err = <-req.Error():
+		t.Error(err)
+		t.FailNow()
+
+	case <-req.Done():
+		fmt.Println("received done signal?")
+		break
+	}
+	//}
+}

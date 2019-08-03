@@ -1,75 +1,84 @@
 package gobac
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
-type covRequest struct {
-	readPropertyRequest
-	out            chan<- *Property
-	err            chan<- error
-	done           chan int
+type CovRequest struct {
+	ReadPropertyRequest
+	out            chan *Property
+	err            chan error
 	subscriptionId uint32
 }
 
-func (s *Server) SendCovRequest(object *Object,
-	subscriptionId uint32,
-	out chan<- *Property,
-	err chan<- error,
-	done chan int) {
-	req := &covRequest{
-		out:            out,
-		err:            err,
-		done:           done,
+func (r *CovRequest) Data() <-chan *Property {
+	return r.out
+}
+
+func (r *CovRequest) Error() <-chan error {
+	return r.err
+}
+
+func (s *Server) SendCovRequest(object *Object, subscriptionId uint32) (*CovRequest, error) {
+	req := &CovRequest{
+		out:            make(chan *Property),
+		err:            make(chan error),
 		subscriptionId: subscriptionId,
-	}
-
-	req.Request = NewRequest(s)
-	req.object = object
-
-	req.InvokeID = NewTransaction()
-
-	req.ExpectingReply = true
-	req.IsBroadcastTarget = false
-	req.EncodeNpdu()
-
-	if e := req.EncodeCovSubscribeApdu(); e != nil {
-		err <- e
-		done <- 1
-		return
-	}
-
-	if req.Len() >= int(object.Device.MaxAPDU) {
-		err <- errors.New("apdu too large")
-		done <- 1
-		return
+		ReadPropertyRequest: ReadPropertyRequest{
+			ConfirmedRequest: s.NewConfirmedRequest(),
+			object:           object,
+			propertyId:       PropPresentValue,
+		},
 	}
 
 	req.Target = object.Device.IPAddress
-	c, h := getChanHandler()
-	s.setConfirmedHandler(req.InvokeID, h)
-	req.Send()
-	go req.startListening(c)
+
+	if e := req.EncodeCovSubscribeApdu(); e != nil {
+		return nil, e
+	}
+
+	if req.Len() >= int(object.Device.MaxAPDU) {
+		return nil, errors.New("apdu too large")
+	}
+
+	if err := req.Send(); err != nil {
+		return nil, err
+	}
+
+	// The first response will be our Ack or Abort/Error/Reject
+	// Let's listen to that first and figure out if this request was successful;
+	// and if it is, we can start listening for the next Acks and emit the data.
+	data := <-req.ConfirmedRequest.Data()
+
+	if data.Failed {
+		return nil, errors.New("device responded with abort, error, or reject")
+	}
+
+	go req.startListening()
+
+	return req, nil
 }
 
-func (r *covRequest) startListening(c <-chan *Response) {
-	defer ReleaseTransaction(r.InvokeID)
-	defer r.Server.removeConfirmedHandler(r.InvokeID)
+func (r *CovRequest) startListening() {
+	defer r.Cleanup()
 	for {
-		data := <-c
+		data := <-r.ConfirmedRequest.Data()
 		if data.Failed {
-			r.done <- 1
+			r.done <- struct{}{}
 			r.err <- errors.New("device rejected request")
 			break
 		} else if data.PduType == PduTypeSimpleAck {
 			// dismiss
+			fmt.Println("simple ack!")
 		} else {
 			go r.emitData(data)
 		}
-
 		continue
 	}
 }
 
-func (r *covRequest) emitData(data *Response) {
+func (r *CovRequest) emitData(data *Response) {
 	prop := Property{}
 
 	err := data.DecodeReadPropertyApdu(r.object, r.propertyId, &prop)
@@ -81,7 +90,7 @@ func (r *covRequest) emitData(data *Response) {
 	}
 }
 
-func (r *covRequest) EncodeCovSubscribeApdu() (err error) {
+func (r *CovRequest) EncodeCovSubscribeApdu() (err error) {
 	err = r.AppendByte(PduTypeConfirmedServiceRequest)
 	err = r.AppendByte(5)
 	err = r.AppendByte(r.InvokeID)

@@ -1,6 +1,7 @@
 package gobac
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"github.com/zyra/gobac/types"
@@ -8,33 +9,43 @@ import (
 	"time"
 )
 
-type whoIsRequest struct {
-	*Request
+type WhoIsRequest struct {
+	UnconfirmedRequest
 	devices   *[]*Device
-	mutex     sync.RWMutex
-	waitGroup sync.WaitGroup
+	mutex     *sync.RWMutex
+	waitGroup *sync.WaitGroup
 }
 
 func (s *Server) WhoIs(dest *[]*Device) error {
-	req := &whoIsRequest{
-		devices: dest,
-		Request: NewRequest(s),
+	req := &WhoIsRequest{
+		devices:            dest,
+		UnconfirmedRequest: s.NewUnconfirmedRequest(),
+		mutex:              new(sync.RWMutex),
+		waitGroup:          new(sync.WaitGroup),
 	}
-	req.EncodeNpdu()
-	req.EncodeWhoIsApdu()
-	tc, c, h := getChanHandlerWithTimeout(time.Second * 5)
-	s.setUnconfirmedHandler(UnconfirmedServiceIAm, h)
-	defer s.removeUnconfirmedHandler(UnconfirmedServiceIAm)
+
+	defer req.Cleanup()
 	defer req.waitGroup.Wait()
 
-	req.Send()
+	if err := req.EncodeWhoIsApdu(); err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+
+	if err := req.Send(ctx); err != nil {
+		return err
+	}
 
 Loop:
 	for {
 		select {
-		case <-tc:
+		case <-ctx.Done():
 			break Loop
-		case data := <-c:
+		case err := <-req.Error():
+			cancel()
+			return err
+		case data := <-req.Data():
 			req.waitGroup.Add(1)
 			go req.handle(data)
 			continue
@@ -44,30 +55,33 @@ Loop:
 	return nil
 }
 
-func (r *whoIsRequest) handle(v *Response) {
+func (r *WhoIsRequest) handle(v *Response) {
 	defer r.waitGroup.Done()
 	device := NewDevice()
 	device.Server = r.Server
 
 	if err := v.DecodeIAmApdu(device); err != nil {
 		fmt.Println("error decoding response", err)
-	} else {
-		device.OriginInterface = r.Server.InterfaceName
-		device.IPAddress = &v.Sender.IP
-		r.mutex.Lock()
-		defer r.mutex.Unlock()
-		*r.devices = append(*r.devices, device)
+		return
 	}
+
+	device.OriginInterface = r.Server.InterfaceName
+	device.IPAddress = &v.Sender.IP
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+	*r.devices = append(*r.devices, device)
 }
 
-func (d *Request) EncodeWhoIsApdu() {
-	_ = d.AppendBytes([]byte{
+func (d *Request) EncodeWhoIsApdu() (err error) {
+	err = d.AppendBytes([]byte{
 		PduTypeUnconfirmedServiceRequest,
 		UnconfirmedServiceWhoIs,
 	})
 
 	//d.EncodeContext(0, minInstance)
 	//d.EncodeContext(1, maxInstance)
+
+	return err
 }
 
 func (r *Response) DecodeIAmApdu(dest *Device) error {

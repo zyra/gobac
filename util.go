@@ -4,7 +4,6 @@ import (
 	"errors"
 	"math"
 	"net"
-	"time"
 )
 
 type networkSet struct {
@@ -70,19 +69,6 @@ func getNetworkSet(ifname string) (*networkSet, error) {
 	ns.BroadcastIPv4 = broadcastIp
 
 	return ns, nil
-}
-
-func getChanHandler() (<-chan *Response, responseHandler) {
-	c := make(chan *Response)
-	return c, func(response *Response) {
-		c <- response
-	}
-}
-
-func getChanHandlerWithTimeout(t time.Duration) (tc <-chan time.Time, c <-chan *Response, handler responseHandler) {
-	c, handler = getChanHandler()
-	tc = time.After(t)
-	return tc, c, handler
 }
 
 func getUdpAddr(ip *net.IP, port uint16) *net.UDPAddr {

@@ -43,5 +43,5 @@ func (p *Property) GetValue() error {
 }
 
 func (p *Property) SetValue(dataType DataTag, value interface{}) error {
-	return p.Object.Device.Server.SendWritePropertyRequest(p.Object, p.ID, dataType, 6, value)
+	return p.Object.Device.Server.SendWritePropertyRequest(p.Object, p.ID, dataType, 8, value)
 }
