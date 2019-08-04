@@ -6,21 +6,20 @@ type Object struct {
 	Device       *Device
 	Type         types.ObjectType
 	Instance     uint16
-	IsDevice     bool
-	PresentValue *Property
+	PresentValue *PropertyValue
 	Description  string
 }
 
-func (o *Object) GetProperty(id PropertyId) (*Property, error) {
-	prop := &Property{
+func (o *Object) GetProperty(id PropertyId) (prop *Property, err error) {
+	prop = &Property{
 		Object: o,
 	}
 
 	prop.Index = 0
 	prop.ID = id
 
-	if err := prop.GetValue(); err != nil {
-		return nil, err
+	if err = prop.GetValue(); err != nil {
+		return prop, err
 	}
 
 	return prop, nil

@@ -3,7 +3,6 @@ package gobac
 import (
 	"context"
 	"fmt"
-	"github.com/zyra/gobac/encoding"
 	"github.com/zyra/gobac/types"
 	"log"
 	"net"
@@ -33,10 +32,12 @@ type Server struct {
 
 	start chan int
 
-	cHandlersMtx  *sync.RWMutex
-	cHandlers     []chan<- *Response
-	ucHandlers    map[types.UnconfirmedService]chan<- *Response
-	ucHandlersMtx *sync.RWMutex
+	cHandlersMtx   *sync.RWMutex
+	cHandlers      []chan<- *Response
+	ucHandlers     map[types.UnconfirmedService]chan<- *Response
+	ucHandlersMtx  *sync.RWMutex
+	covHandlers    []chan<- *CovNotification
+	covHandlersMtx *sync.RWMutex
 
 	concurrency uint
 }
@@ -54,9 +55,11 @@ func NewServer(config *ServerConfig) (*Server, error) {
 		BroadcastPort:  config.ListenPort,
 		DefaultTimeout: config.DefaultTimeout,
 		cHandlersMtx:   new(sync.RWMutex),
-		cHandlers:      make([]chan<- *Response, 255, 255),
+		cHandlers:      make([]chan<- *Response, 255),
 		ucHandlers:     make(map[types.UnconfirmedService]chan<- *Response),
 		ucHandlersMtx:  new(sync.RWMutex),
+		covHandlers:    make([]chan<- *CovNotification, 128),
+		covHandlersMtx: new(sync.RWMutex),
 		networkSet:     ns,
 		concurrency:    config.Concurrency,
 		close:          make(chan int),
@@ -225,8 +228,8 @@ func (s *Server) receive(conn *net.UDPConn, ctx context.Context) {
 }
 
 // Send data to a UDP addr
-func (s *Server) Send(buff *encoding.Buffer, dest *net.UDPAddr) error {
-	_, err := s.UnicastConn.WriteToUDP(buff.Bytes(), dest)
+func (s *Server) Send(bytes []byte, dest *net.UDPAddr) error {
+	_, err := s.UnicastConn.WriteToUDP(bytes, dest)
 	return err
 }
 
@@ -240,7 +243,7 @@ func (s *Server) handle(data []byte, address *net.UDPAddr) {
 	}
 
 	// Create a new response object with the data we received
-	res := NewResponse(data)
+	res := NewResponse(data, s, address.IP)
 
 	// Set the sender address
 	res.Sender = address
@@ -259,9 +262,40 @@ func (s *Server) handle(data []byte, address *net.UDPAddr) {
 	}
 
 	if res.InvokeID > 0 {
+
+		if res.ServiceChoice == ConfirmedServiceCovNotification && res.PduType != PduTypeSimpleAck {
+			// This is a cov notification
+			if n, ok := res.Dest.(*CovNotification); ok {
+				if h := s.getCovHandler(n.ProcessIdentifier); h != nil {
+					h <- n
+					return
+				} else {
+					// Probably an old subscription that's not valid anymore
+					// let's unsubscribe and stop this madness
+					println("cancelling a CoV", res.InvokeID, res.Dest.(CovNotification).ProcessIdentifier)
+					if n, ok := res.Dest.(*CovNotification); ok {
+						obj := Object{
+							Instance: n.ObjectInstance,
+							Type:     n.ObjectType,
+							Device: &Device{
+								IPAddress: res.Target,
+							},
+						}
+
+						_, _ = s.SendCovRequest(&obj, n.ProcessIdentifier, true)
+					}
+					return
+				}
+			} else {
+				// oh well..
+				// let's just let this request continue and see what happens
+			}
+		}
+
 		h := s.getConfirmedHandler(res.InvokeID)
+
 		if h != nil {
-			res.Failed = true
+			println("sending data to confirmed handler for ", res.InvokeID)
 			h <- res
 		} else {
 			log.Printf("no handler was registered for invoke id %d, ignoring this message\n", res.InvokeID)
@@ -308,6 +342,41 @@ func (s *Server) RemoveConfirmedHandler(invokeId uint8) {
 	s.cHandlersMtx.Lock()
 	defer s.cHandlersMtx.Unlock()
 	s.cHandlers[invokeId-1] = nil
+}
+
+func (s *Server) getCovHandler(processId uint8) chan<- *CovNotification {
+	if processId == 0 {
+		fmt.Println("getCovHandler got processId 0!")
+		return nil
+	}
+	s.covHandlersMtx.RLock()
+	defer s.covHandlersMtx.RUnlock()
+	if h := s.covHandlers[processId-1]; h != nil {
+		return h
+	}
+	return nil
+}
+
+func (s *Server) SetCovHandler(processId uint8, handler chan<- *CovNotification) {
+	if processId == 0 {
+		fmt.Println("SetCovHandler got processId 0!")
+		return
+	}
+
+	s.covHandlersMtx.Lock()
+	defer s.covHandlersMtx.Unlock()
+	s.covHandlers[processId-1] = handler
+}
+
+func (s *Server) RemoveCovHandler(processId uint8) {
+	if processId == 0 {
+		fmt.Println("RemoveCovHandler got processId 0!")
+		return
+	}
+
+	s.covHandlersMtx.Lock()
+	defer s.covHandlersMtx.Unlock()
+	s.covHandlers[processId-1] = nil
 }
 
 func (s *Server) getUnconfirmedHandler(service types.UnconfirmedService) chan<- *Response {

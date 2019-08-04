@@ -44,9 +44,10 @@ const (
 type ConfirmedService = byte
 
 const (
-	ConfirmedServiceReadProperty  ConfirmedService = 12
-	ConfirmedServiceWriteProperty                  = 15
-	ConfirmedServiceSubscribeCov                   = 5
+	ConfirmedServiceReadProperty    ConfirmedService = 12
+	ConfirmedServiceWriteProperty                    = 15
+	ConfirmedServiceSubscribeCov                     = 5
+	ConfirmedServiceCovNotification                  = 1
 )
 
 type UnconfirmedService = byte

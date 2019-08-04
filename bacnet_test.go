@@ -55,7 +55,7 @@ func TestScan(t *testing.T) {
 	fmt.Printf("Found %d devices\n", dLen)
 
 	for _, d := range devices {
-		fmt.Printf("> Device ID: %d\n", d.Instance)
+		fmt.Printf("> Device ID: %d\n", d.DeviceID)
 	}
 
 	device = devices[0]
@@ -77,12 +77,12 @@ func TestObjects(t *testing.T) {
 			//twg.Add(1)
 			//go func(wg *sync.WaitGroup, device *Device, s *stats) {
 			//	defer wg.Done()
-			objects := make([]*Object, 0)
-			if err := device.GetObjects(&objects); err != nil {
+			if objs, err := device.GetObjects(); err != nil {
 				fmt.Printf("error getting objects: %s\n", err)
 				s.f++
 			} else {
 				s.s++
+				objects = objs
 			}
 			//}(twg, devices[i], s)
 		}
@@ -92,13 +92,12 @@ func TestObjects(t *testing.T) {
 		fmt.Printf("Total success: %d\nTotal failure: %d\n", s.s, s.f)
 	}
 
-	if device == nil {
-		t.FailNow()
-	}
-
-	if err = device.GetObjects(&objects); err != nil {
+	if objs, err := device.GetObjects(); err != nil {
+		fmt.Printf("error getting objects: %s\n", err)
 		t.Error(err)
 		t.FailNow()
+	} else {
+		objects = objs
 	}
 
 	olen := len(objects)
@@ -127,7 +126,7 @@ func TestWrite(t *testing.T) {
 		}
 	}
 
-	if obj == nil {
+	if &obj == nil {
 		t.Error("couldn't find an AO obj")
 		t.FailNow()
 	}
@@ -150,7 +149,7 @@ func TestWrite(t *testing.T) {
 			t.FailNow()
 		}
 
-		if (*prop.Values)[0].Value != float32(1) {
+		if prop.Values[0].Value != float32(1) {
 			t.Error("value didnt change")
 			t.FailNow()
 		}
@@ -175,7 +174,7 @@ func TestReadAll(t *testing.T) {
 		if p, err := o.GetProperty(types.PROP_DESCRIPTION); err != nil {
 			fmt.Println(err)
 		} else {
-			fmt.Printf("> Description is %s\n", (*p.Values)[0].Value)
+			fmt.Printf("> Description is %s\n", p.Values[0].Value)
 		}
 	}
 }
@@ -189,7 +188,7 @@ func TestServer_SendCovRequest(t *testing.T) {
 	var obj *Object
 
 	for _, o := range objects {
-		if o.Type == types.OBJECT_ANALOG_VALUE {
+		if o.Type == types.OBJECT_MULTI_STATE_VALUE {
 			obj = o
 			break
 		}
@@ -207,7 +206,7 @@ func TestServer_SendCovRequest(t *testing.T) {
 		t.FailNow()
 	}
 
-	req, err := server.SendCovRequest(prop.Object, 2)
+	req, err := server.SendCovRequest(prop.Object, 2, false)
 
 	if err != nil {
 		t.Error(err)
@@ -222,13 +221,13 @@ func TestServer_SendCovRequest(t *testing.T) {
 	select {
 	case prop := <-req.Data():
 		fmt.Println("Got a property!", prop)
-		if prop.Values == nil || len(*prop.Values) == 0 {
+		if prop.Values == nil || len(prop.Values) == 0 {
 			t.Error("values are empty or null")
 			t.FailNow()
 		}
 
-		if (*prop.Values)[0].Value.(float32) != 2 {
-			t.Errorf("expected value to be %d, got %f", 2, (*prop.Values)[0].Value.(float32))
+		if prop.Values[0].Value.(float32) != 2 {
+			t.Errorf("expected value to be %d, got %f", 2, prop.Values[0].Value.(float32))
 			t.FailNow()
 		}
 

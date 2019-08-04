@@ -3,7 +3,6 @@ package gobac
 import (
 	"context"
 	"errors"
-	"fmt"
 	"github.com/zyra/gobac/types"
 	"sync"
 	"time"
@@ -57,19 +56,12 @@ Loop:
 
 func (r *WhoIsRequest) handle(v *Response) {
 	defer r.waitGroup.Done()
-	device := NewDevice()
-	device.Server = r.Server
 
-	if err := v.DecodeIAmApdu(device); err != nil {
-		fmt.Println("error decoding response", err)
-		return
+	if res, ok := v.Dest.(*Device); ok {
+		r.mutex.Lock()
+		defer r.mutex.Unlock()
+		*r.devices = append(*r.devices, res)
 	}
-
-	device.OriginInterface = r.Server.InterfaceName
-	device.IPAddress = &v.Sender.IP
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-	*r.devices = append(*r.devices, device)
 }
 
 func (d *Request) EncodeWhoIsApdu() (err error) {
@@ -84,7 +76,13 @@ func (d *Request) EncodeWhoIsApdu() (err error) {
 	return err
 }
 
-func (r *Response) DecodeIAmApdu(dest *Device) error {
+func (r *Response) DecodeIAmApdu() error {
+	dest := &Device{
+		Server:          r.Server,
+		OriginInterface: r.Server.InterfaceName,
+		IPAddress:       r.Target,
+	}
+
 	tagNumber, lenValue := r.DecodeTag()
 
 	if tagNumber != types.ApplicationTag_OBJECT_ID {
@@ -98,8 +96,6 @@ func (r *Response) DecodeIAmApdu(dest *Device) error {
 		return errors.New("object type isn't a device")
 	}
 
-	dest.Type = objectType
-	dest.Instance = objectInstance
 	dest.DeviceID = objectInstance
 
 	// Max APDU
@@ -141,5 +137,6 @@ func (r *Response) DecodeIAmApdu(dest *Device) error {
 
 	dest.VendorID = uint16(vendorId)
 
+	r.Dest = dest
 	return nil
 }

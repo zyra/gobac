@@ -7,10 +7,10 @@ import (
 )
 
 type Pdu struct {
-	*encoding.Buffer
-	Source              *net.IP
+	encoding.Buffer
+	Source              net.IP
 	SourcePort          uint16
-	Target              *net.IP
+	Target              net.IP
 	TargetPort          uint16
 	ProtocolVersion     uint8
 	ExpectingReply      bool
@@ -30,8 +30,8 @@ type Pdu struct {
 	InvokeID      uint8
 }
 
-func NewPdu() *Pdu {
-	return &Pdu{
+func NewPdu() Pdu {
+	return Pdu{
 		Buffer:              encoding.NewBuffer(),
 		ProtocolVersion:     1,
 		ExpectingReply:      false,

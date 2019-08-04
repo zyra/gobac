@@ -7,7 +7,7 @@ import (
 )
 
 type Request struct {
-	*Pdu
+	Pdu
 	Server      *Server
 	IsConfirmed bool
 	err         chan error
@@ -88,7 +88,7 @@ func (d *Request) Send() error {
 	if err := d.EncodeHeaders(); err != nil {
 		return err
 	}
-	return d.Server.Send(d.Buffer, destUdp)
+	return d.Server.Send(d.Buffer.Bytes(), destUdp)
 }
 
 func (d *Request) closeChans() {

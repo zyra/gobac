@@ -3,35 +3,31 @@ package gobac
 import (
 	"errors"
 	"fmt"
+	"net"
 	"time"
 )
 
 type ReadPropertyRequest struct {
 	ConfirmedRequest
-	object     *Object
-	propertyId PropertyId
+	propertyId     PropertyId
+	objectType     uint16
+	objectInstance uint16
 }
 
-func (s *Server) SendReadPropertyRequest(object *Object,
-	propertyId PropertyId,
-	dest *Property) error {
+func (s *Server) SendReadPropertyRequest(deviceAddress net.IP, objectType, objectInstance uint16, propertyId PropertyId, dest *Property) error {
 	req := &ReadPropertyRequest{
-		ConfirmedRequest:    s.NewConfirmedRequest(),
-		propertyId: propertyId,
-		object:     object,
+		ConfirmedRequest: s.NewConfirmedRequest(),
+		propertyId:       propertyId,
+		objectType:       objectType,
+		objectInstance:   objectInstance,
 	}
-	req.Target = object.Device.IPAddress
+	req.Target = deviceAddress
 
 	defer req.Cleanup()
 
 	if err := req.EncodeReadPropertyApdu(); err != nil {
 		return err
 	}
-
-	if req.Len() >= int(object.Device.MaxAPDU) {
-		return errors.New("request size exceeds destination's max APDU")
-	}
-
 
 	if err := req.Send(); err != nil {
 		return err
@@ -45,18 +41,36 @@ func (s *Server) SendReadPropertyRequest(object *Object,
 
 	case data := <-req.Data():
 		if data.Failed {
-			switch data.PduType {
-			case PduTypeError:
-				return errors.New("device responded with error")
-			case PduTypeAbort:
-				return errors.New("device aborted request")
-			case PduTypeReject:
-				return errors.New("device rejected request")
+			if data.Errored {
+				return fmt.Errorf("error with %s: %s", data.ErrorClassString, data.ErrorCodeString)
 			}
+
+			if data.Aborted {
+				return fmt.Errorf("aborted: %s", data.AbortReasonString)
+			}
+
+			if data.Rejected {
+				return fmt.Errorf("rejected: %s", data.RejectReasonString)
+			}
+
+			return errors.New("unknown failure reason")
 		}
 
-		if err := data.DecodeReadPropertyApdu(object, propertyId, dest); err != nil {
-			return err
+		if prop, ok := data.Dest.(ReadPropertyResponse); ok {
+			if prop.ObjectType != objectType {
+				return fmt.Errorf("expected object type to be %d but got %d\n", objectType, prop.ObjectType)
+			}
+
+			if prop.ObjectInstance != objectInstance {
+				return fmt.Errorf("expected object instance to be %d but got %d\n", objectInstance, prop.ObjectInstance)
+			}
+
+			if prop.ID != propertyId {
+				return fmt.Errorf("expected property id to be %d but got %d\n", propertyId, prop.ID)
+			}
+
+			dest.ID = prop.ID
+			dest.Values = prop.Values
 		}
 	}
 
@@ -70,7 +84,7 @@ func (d *ReadPropertyRequest) EncodeReadPropertyApdu() (err error) {
 	err = d.AppendByte(ConfirmedServiceReadProperty)
 
 	err = d.EncodeTag(0, true, 4)
-	err = d.EncodeObjectId(d.object.Type, d.object.Instance)
+	err = d.EncodeObjectId(d.objectType, d.objectInstance)
 
 	var lenValue uint32 = 1
 
@@ -84,7 +98,16 @@ func (d *ReadPropertyRequest) EncodeReadPropertyApdu() (err error) {
 	return err
 }
 
-func (r *Response) DecodeReadPropertyApdu(object *Object, propertyId PropertyId, dest *Property) error {
+type ReadPropertyResponse struct {
+	ObjectType     uint16
+	ObjectInstance uint16
+	ID             uint16
+	Values         []*PropertyValue
+}
+
+func (r *Response) DecodeReadPropertyApdu() error {
+	dest := ReadPropertyResponse{}
+
 	// Check object id + instance
 	tagNumber, lenValue := r.DecodeTag()
 
@@ -92,15 +115,7 @@ func (r *Response) DecodeReadPropertyApdu(object *Object, propertyId PropertyId,
 		return fmt.Errorf("expected tagNumber to be %d but got %d", TagContextObjectId, tagNumber)
 	}
 
-	objectType, objectInstance := r.DecodeObjectId()
-
-	if objectType != object.Type {
-		return fmt.Errorf("expected object type to be %d but got %d", object.Type, objectType)
-	}
-
-	if objectInstance != object.Instance {
-		return fmt.Errorf("expected object instance to be %d but got %d", object.Instance, objectInstance)
-	}
+	dest.ObjectType, dest.ObjectInstance = r.DecodeObjectId()
 
 	// Check property id
 	tagNumber, lenValue = r.DecodeTag()
@@ -109,11 +124,7 @@ func (r *Response) DecodeReadPropertyApdu(object *Object, propertyId PropertyId,
 		return fmt.Errorf("expected tagNumber to be %d but got %d", TagContextPropertyId, tagNumber)
 	}
 
-	propId := uint16(r.DecodeUnsigned(lenValue))
-
-	if propId != propertyId {
-		return fmt.Errorf("expected propertyId to be %d but got %d", propertyId, propId)
-	}
+	dest.ID = uint16(r.DecodeUnsigned(lenValue))
 
 	// need to check array index here...
 	// but since we omitted that from our request
@@ -131,12 +142,11 @@ func (r *Response) DecodeReadPropertyApdu(object *Object, propertyId PropertyId,
 
 	// Get properties
 	for r.Len() > 1 {
-		value := &PropertyValue{}
-		r.DecodePropertyValue(value)
-		values = append(values, value)
+		value := r.DecodePropertyValue()
+		values = append(values, &value)
 	}
 
-	dest.Values = &values
+	dest.Values = values
 
 	// Closing tag
 	tagNumber, lenValue = r.DecodeTag()
@@ -145,10 +155,12 @@ func (r *Response) DecodeReadPropertyApdu(object *Object, propertyId PropertyId,
 		return fmt.Errorf("expected tagNumber to be %d but got %d", TagContextPropertyValue, tagNumber)
 	}
 
+	r.Dest = dest
+
 	return nil
 }
 
-func (r *Response) DecodePropertyValue(dest *PropertyValue) {
+func (r *Response) DecodePropertyValue() (dest PropertyValue) {
 	tagNumber, lenValue := r.DecodeTag()
 	dest.Type = tagNumber
 
@@ -199,10 +211,12 @@ func (r *Response) DecodePropertyValue(dest *PropertyValue) {
 
 	case TagObjectId:
 		objectType, objectInstance := r.DecodeObjectId()
-		value := &ObjectIdValue{
+		value := ObjectIdValue{
 			Type:     objectType,
 			Instance: objectInstance,
 		}
 		dest.Value = value
 	}
+
+	return dest
 }

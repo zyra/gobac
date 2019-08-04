@@ -7,10 +7,9 @@ import (
 )
 
 type Device struct {
-	*Object
 	Server          *Server
-	IPAddress       *net.IP
-	MACAddress      *net.HardwareAddr
+	IPAddress       net.IP
+	MACAddress      net.HardwareAddr
 	DeviceID        uint16
 	MaxAPDU         uint32
 	OriginInterface string
@@ -18,26 +17,24 @@ type Device struct {
 	Segmentation    types.BACNET_SEGMENTATION
 }
 
-func NewDevice() *Device {
-	d := Device{
-		Object: &Object{},
+func (d *Device) GetObjects() (dest []*Object, err error) {
+	obj := &Object{
+		Device:   d,
+		Instance: d.DeviceID,
+		Type:     8,
 	}
-	d.IsDevice = true
-	d.Device = &d
-	return &d
-}
 
-func (d *Device) GetObjects(dest *[]*Object) error {
-	prop, err := d.GetProperty(types.PROP_OBJECT_LIST)
+	prop, err := obj.GetProperty(types.PROP_OBJECT_LIST)
 
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if prop.Values == nil {
-		return errors.New("property value is nil")
+		return nil, errors.New("property value is nil")
 	}
 
-	prop.ReadValueAsObject(dest)
-	return nil
+	dest = prop.ReadValuesAsObjects()
+
+	return dest, nil
 }

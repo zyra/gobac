@@ -4,41 +4,36 @@ import (
 	"errors"
 	"fmt"
 	"github.com/zyra/gobac/types"
+	"net"
 	"time"
 )
 
 type WritePropertyRequest struct {
 	ConfirmedRequest
-	object     *Object
-	propertyId PropertyId
-	tag        DataTag
-	value      interface{}
+	propertyId     PropertyId
+	tag            DataTag
+	value          interface{}
+	objectType     uint16
+	objectInstance uint16
 }
 
-func (s *Server) SendWritePropertyRequest(object *Object,
-	propertyId PropertyId,
-	propertyType DataTag,
-	priority uint8,
-	value interface{}) error {
+func (s *Server) SendWritePropertyRequest(deviceAddress net.IP, objectType, objectInstance uint16, propertyId PropertyId, tag DataTag, priority uint8, value interface{}) error {
 	req := &WritePropertyRequest{
 		ConfirmedRequest: s.NewConfirmedRequest(),
 		propertyId:       propertyId,
-		object:           object,
-		tag:              propertyType,
+		tag:              tag,
 		value:            value,
+		objectType:       objectType,
+		objectInstance:   objectInstance,
 	}
 
 	defer req.Cleanup()
 
 	req.Priority = priority
-	req.Target = object.Device.IPAddress
+	req.Target = deviceAddress
 
 	if err := req.EncodeWritePropertyApdu(); err != nil {
 		return err
-	}
-
-	if req.Len() >= int(object.Device.MaxAPDU) {
-		return errors.New("request size exceeds destination's max APDU")
 	}
 
 	if err := req.Send(); err != nil {
@@ -52,23 +47,24 @@ func (s *Server) SendWritePropertyRequest(object *Object,
 		return errors.New("DefaultTimeout")
 
 	case data := <-req.Data():
-		switch data.PduType {
-		case PduTypeSimpleAck:
-			// Write was successful!
-			return nil
-		case PduTypeError:
-			return errors.New("device responded with error")
-		case PduTypeAbort:
-			return errors.New("device aborted request")
-		case PduTypeReject:
-			return errors.New("device rejected request")
-		default:
-			fmt.Println("unhandled pdu type!")
-			return nil
-		}
-	}
+		if data.Failed {
+			if data.Errored {
+				return fmt.Errorf("error with %s: %s", data.ErrorClassString, data.ErrorCodeString)
+			}
 
-	//return nil
+			if data.Aborted {
+				return fmt.Errorf("aborted: %s", data.AbortReasonString)
+			}
+
+			if data.Rejected {
+				return fmt.Errorf("rejected: %s", data.RejectReasonString)
+			}
+
+			return errors.New("unknown failure reason")
+		}
+
+		return nil
+	}
 }
 
 func (d *WritePropertyRequest) EncodeWritePropertyApdu() (err error) {
@@ -78,7 +74,7 @@ func (d *WritePropertyRequest) EncodeWritePropertyApdu() (err error) {
 	err = d.AppendByte(ConfirmedServiceWriteProperty)
 
 	err = d.EncodeTag(TagContextObjectId, true, 4)
-	err = d.EncodeObjectId(d.object.Type, d.object.Instance)
+	err = d.EncodeObjectId(d.objectType, d.objectInstance)
 
 	lenValue := getUnsignedLen(uint(d.propertyId))
 

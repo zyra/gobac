@@ -6,7 +6,7 @@ type Buffer struct {
 	*bytes.Buffer
 }
 
-func NewBuffer(data ...[]byte) *Buffer {
+func NewBuffer(data ...[]byte) Buffer {
 	var b []byte
 
 	if len(data) == 1 {
@@ -15,7 +15,7 @@ func NewBuffer(data ...[]byte) *Buffer {
 		b = make([]byte, 0)
 	}
 
-	return &Buffer{
+	return Buffer{
 		Buffer: bytes.NewBuffer(b),
 	}
 }
