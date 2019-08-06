@@ -19,7 +19,7 @@ var err error
 
 func TestNewServer(t *testing.T) {
 	config := NewServerConfig().SetInterfaceName(ifname)
-	config.SetDefaultTimeout(time.Hour * 3)
+	config.SetDefaultTimeout(time.Second * 3)
 	server, err = NewServer(config)
 
 	if err != nil {
@@ -246,7 +246,7 @@ func TestServer_SendCovRequest(t *testing.T) {
 	Loop:
 		for {
 			select {
-			case <-time.After(time.Hour * 3):
+			case <-time.After(time.Second * 3):
 				t.Error("didn't get notification within 3 seconds")
 				t.FailNow()
 			case n := <-req.Data():
