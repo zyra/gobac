@@ -9,7 +9,7 @@ import (
 )
 
 func Whois(ctx *cli.Context) (err error) {
-	duration := time.Duration(ctx.GlobalFloat64("duration")) * 1000 * time.Millisecond
+	duration := time.Duration(ctx.Float64("duration")* 1000)  * time.Millisecond
 
 	devices, err := whois(duration)
 

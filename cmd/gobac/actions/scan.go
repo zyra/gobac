@@ -43,7 +43,7 @@ func Scan(ctx *cli.Context) error {
 		} else {
 			ed.Properties = props
 			for iii, p := range props {
-				color.HiYellow("|--| Property <%d/%d> \n", iii+1, len(props))
+				color.HiYellow("|--| Property <%d/%d> | ID: %d \n", iii+1, len(props), p.ID)
 
 				for iiii, v := range p.Values {
 					color.Blue("|--|-->> Value <%d/%d>: %s \n", iiii+1, len(p.Values), v.ReadAsString())
@@ -75,7 +75,7 @@ func Scan(ctx *cli.Context) error {
 				eObjs = append(eObjs, eObj)
 
 				for iii, p := range props {
-					color.HiYellow("|--|--| Property <%d/%d> | ID: %d \n", iii+1, p.ID, len(props))
+					color.HiYellow("|--|--| Property <%d/%d> | ID: %d \n", iii+1, len(props), p.ID)
 
 					for iiii, v := range p.Values {
 						color.Blue("|--|--|-->> Value <%d/%d>: %s \n", iiii+1, len(p.Values), v.ReadAsString())
