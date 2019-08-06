@@ -9,5 +9,5 @@ type Object struct {
 	ObjectId     *ObjectId
 	PresentValue *PropertyValue // TODO revise this
 	Description  string
-	DeviceID     uint16
+	DeviceID     Uint16
 }
