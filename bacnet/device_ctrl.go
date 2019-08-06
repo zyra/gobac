@@ -24,6 +24,7 @@ func (d DeviceController) GetObjects(server *Server) (dest []*types.Object, err 
 
 	for _, o := range dest {
 		o.IPAddress = d.IPAddress
+		o.DeviceID = d.ObjectId.Instance
 	}
 
 	return dest, nil
