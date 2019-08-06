@@ -6,6 +6,14 @@ import (
 	"reflect"
 )
 
+var typeOfFloat = reflect.TypeOf(float64(0))
+var typeOfFloat32 = reflect.TypeOf(float32(0))
+//var typeOfInt = reflect.TypeOf(int64(0))
+var typeOfInt32 = reflect.TypeOf(int32(0))
+//var typeOfUnt = reflect.TypeOf(uint64(0))
+var typeOfUint32 = reflect.TypeOf(uint32(0))
+var typeOfString = reflect.TypeOf("")
+
 func invalidVal(p *PropertyValue) error {
 	return fmt.Errorf("invalid value %x for type %x", p.Value, p.Type)
 }
@@ -21,6 +29,21 @@ func (p *PropertyValue) ReadAsObject() Object {
 		obj.ObjectId = &v
 	}
 	return obj
+}
+
+func (p *PropertyValue) IsNumeric() bool {
+	return reflect.TypeOf(p.Value).ConvertibleTo(typeOfFloat)
+}
+
+func (p *PropertyValue) ReadAsFloat64() float64 {
+	if p.IsNumeric() {
+		return reflect.ValueOf(p.Value).Convert(typeOfFloat).Float()
+	}
+	return 0
+}
+
+func (p *PropertyValue) ReadAsFloat64Unsafe() float64 {
+	return reflect.ValueOf(p.Value).Convert(typeOfFloat).Float()
 }
 
 func (p *PropertyValue) ReadAsString() string {
@@ -57,8 +80,8 @@ func (p *PropertyValue) ReadAsString() string {
 		return p.Value.(fmt.Stringer).String()
 	}
 
-	if reflect.TypeOf(p.Value).ConvertibleTo(reflect.TypeOf("")) {
-		return reflect.ValueOf(p.Value).Convert(reflect.TypeOf("")).String()
+	if reflect.TypeOf(p.Value).ConvertibleTo(typeOfString) {
+		return reflect.ValueOf(p.Value).Convert(typeOfString).String()
 	} else {
 		return fmt.Sprintf("%s", p.Value)
 	}
@@ -94,11 +117,11 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 
 	case TagUnsigned,
 		TagEnumerated:
-		if !reflect.TypeOf(p.Value).ConvertibleTo(reflect.TypeOf(uint32(0))) {
+		if !reflect.TypeOf(p.Value).ConvertibleTo(typeOfUint32) {
 			return nil, invalidVal(p)
 		}
 
-		p.Value = uint32(reflect.ValueOf(p.Value).Convert(reflect.TypeOf(uint32(0))).Uint())
+		p.Value = uint32(reflect.ValueOf(p.Value).Convert(typeOfUint32).Uint())
 		uintBytes := EncodeVarUint(p.Value.(uint32))
 
 		tag.LenValue = len(uintBytes)
@@ -111,11 +134,11 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 		break
 
 	case TagSigned:
-		if !reflect.TypeOf(p.Value).ConvertibleTo(reflect.TypeOf(int32(0))) {
+		if !reflect.TypeOf(p.Value).ConvertibleTo(typeOfInt32) {
 			return nil, invalidVal(p)
 		}
 
-		p.Value = int32(reflect.ValueOf(p.Value).Convert(reflect.TypeOf(int32(0))).Int())
+		p.Value = int32(reflect.ValueOf(p.Value).Convert(typeOfInt32).Int())
 		uintBytes := EncodeVarInt(p.Value.(int32))
 		tag.LenValue = len(uintBytes)
 
@@ -127,11 +150,11 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 		break
 
 	case TagReal:
-		if !reflect.TypeOf(p.Value).ConvertibleTo(reflect.TypeOf(float32(0))) {
+		if !reflect.TypeOf(p.Value).ConvertibleTo(typeOfFloat32) {
 			return nil, invalidVal(p)
 		}
 
-		p.Value = float32(reflect.ValueOf(p.Value).Convert(reflect.TypeOf(float32(0))).Float())
+		p.Value = float32(reflect.ValueOf(p.Value).Convert(typeOfFloat32).Float())
 		tag.LenValue = 4
 
 		if _, err := buff.Write(tag.EncodeTag()); err != nil {
@@ -147,11 +170,11 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 		break
 
 	case TagDouble:
-		if !reflect.TypeOf(p.Value).ConvertibleTo(reflect.TypeOf(float64(0))) {
+		if !reflect.TypeOf(p.Value).ConvertibleTo(typeOfFloat) {
 			return nil, invalidVal(p)
 		}
 
-		p.Value = reflect.ValueOf(p.Value).Convert(reflect.TypeOf(float64(0))).Float()
+		p.Value = reflect.ValueOf(p.Value).Convert(typeOfFloat).Float()
 		tag.LenValue = 8
 
 		if _, err := buff.Write(tag.EncodeTag()); err != nil {
