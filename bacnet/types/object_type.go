@@ -1,0 +1,66 @@
+package types
+
+const (
+	ObjectTypeAnalogInput           ObjectType = 0
+	ObjectTypeAnalogOutput                     = 1
+	ObjectTypeAnalogValue                      = 2
+	ObjectTypeBinaryInput                      = 3
+	ObjectTypeBinaryOutput                     = 4
+	ObjectTypeBinaryValue                      = 5
+	ObjectTypeCalendar                         = 6
+	ObjectTypeCommand                          = 7
+	ObjectTypeDevice                           = 8
+	ObjectTypeEventEnrollment                  = 9
+	ObjectTypeFile                             = 10
+	ObjectTypeGroup                            = 11
+	ObjectTypeLoop                             = 12
+	ObjectTypeMultiStateInput                  = 13
+	ObjectTypeMultiStateOutput                 = 14
+	ObjectTypeNotificationClass                = 15
+	ObjectTypeProgram                          = 16
+	ObjectTypeSchedule                         = 17
+	ObjectTypeAveraging                        = 18
+	ObjectTypeMultiStateValue                  = 19
+	ObjectTypeTrendlog                         = 20
+	ObjectTypeLifeSafetyPoint                  = 21
+	ObjectTypeLifeSafetyZone                   = 22
+	ObjectTypeAccumulator                      = 23
+	ObjectTypePulseConverter                   = 24
+	ObjectTypeEventLog                         = 25
+	ObjectTypeGlobalGroup                      = 26
+	ObjectTypeTrendLogMultiple                 = 27
+	ObjectTypeLoadControl                      = 28
+	ObjectTypeStructuredView                   = 29
+	ObjectTypeAccessDoor                       = 30
+	ObjectTypeTimer                            = 31
+	ObjectTypeAccessCredential                 = 32
+	ObjectTypeAccessPoint                      = 33
+	ObjectTypeAccessRights                     = 34
+	ObjectTypeAccessUser                       = 35
+	ObjectTypeAccessZone                       = 36
+	ObjectTypeCredentialDataInput              = 37
+	ObjectTypeNetworkSecurity                  = 38
+	ObjectTypeBitstringValue                   = 39
+	ObjectTypeCharacterstringValue             = 40
+	ObjectTypeDatePatternValue                 = 41
+	ObjectTypeDateValue                        = 42
+	ObjectTypeDatetimePatternValue             = 43
+	ObjectTypeDatetimeValue                    = 44
+	ObjectTypeIntegerValue                     = 45
+	ObjectTypeLargeAnalogValue                 = 46
+	ObjectTypeOctetstringValue                 = 47
+	ObjectTypePositiveIntegerValue             = 48
+	ObjectTypeTimePatternValue                 = 49
+	ObjectTypeTimeValue                        = 50
+	ObjectTypeNotificationForwarder            = 51
+	ObjectTypeAlertEnrollment                  = 52
+	ObjectTypeChannel                          = 53
+	ObjectTypeLightingOutput                   = 54
+	ObjectTypeBinaryLightingOutput             = 55
+	ObjectTypeNetworkPort                      = 56
+	ObjectTypeProprietaryMin                   = 128
+	ObjectTypeProprietaryMax                   = 1023
+	ObjectTypeMax                              = 1024
+)
+
+type ObjectType = Uint16
