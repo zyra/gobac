@@ -6,6 +6,10 @@ import (
 	"reflect"
 )
 
+func invalidVal(p *PropertyValue) error {
+	return fmt.Errorf("invalid value %x for type %x", p.Value, p.Type)
+}
+
 type PropertyValue struct {
 	Type  DataType
 	Value interface{}
@@ -69,7 +73,6 @@ func (p *PropertyValue) ValueLength(b []byte) (length int, bytesRead int) {
 func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 	buff := bytes.NewBuffer(make([]byte, 0))
 
-	invalidVal := fmt.Errorf("invalid value %x for type %x", p.Value, p.Type)
 
 	tag := &Tag{
 		TagNumber: p.Type,
@@ -93,7 +96,7 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 	case TagUnsigned,
 		TagEnumerated:
 		if !reflect.TypeOf(p.Value).ConvertibleTo(reflect.TypeOf(uint32(0))) {
-			return nil, invalidVal
+			return nil, invalidVal(p)
 		}
 
 		p.Value = uint32(reflect.ValueOf(p.Value).Convert(reflect.TypeOf(uint32(0))).Uint())
@@ -110,7 +113,7 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 
 	case TagSigned:
 		if !reflect.TypeOf(p.Value).ConvertibleTo(reflect.TypeOf(int32(0))) {
-			return nil, invalidVal
+			return nil, invalidVal(p)
 		}
 
 		p.Value = int32(reflect.ValueOf(p.Value).Convert(reflect.TypeOf(int32(0))).Int())
@@ -126,7 +129,7 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 
 	case TagReal:
 		if !reflect.TypeOf(p.Value).ConvertibleTo(reflect.TypeOf(float32(0))) {
-			return nil, invalidVal
+			return nil, invalidVal(p)
 		}
 
 		p.Value = float32(reflect.ValueOf(p.Value).Convert(reflect.TypeOf(float32(0))).Float())
@@ -146,7 +149,7 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 
 	case TagDouble:
 		if !reflect.TypeOf(p.Value).ConvertibleTo(reflect.TypeOf(float64(0))) {
-			return nil, invalidVal
+			return nil, invalidVal(p)
 		}
 
 		p.Value = reflect.ValueOf(p.Value).Convert(reflect.TypeOf(float64(0))).Float()
@@ -173,7 +176,7 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 				return nil, err
 			}
 		} else {
-			return nil, invalidVal
+			return nil, invalidVal(p)
 		}
 		break
 
@@ -192,7 +195,7 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 				return nil, err
 			}
 		} else {
-			return nil, invalidVal
+			return nil, invalidVal(p)
 		}
 		break
 
@@ -212,7 +215,7 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 				return nil, err
 			}
 		} else {
-			return nil, invalidVal
+			return nil, invalidVal(p)
 		}
 		break
 
@@ -231,7 +234,7 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 				return nil, err
 			}
 		} else {
-			return nil, invalidVal
+			return nil, invalidVal(p)
 		}
 		break
 
@@ -251,7 +254,7 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 				return nil, err
 			}
 		} else {
-			return nil, invalidVal
+			return nil, invalidVal(p)
 		}
 		break
 
@@ -270,7 +273,7 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 				return nil, err
 			}
 		} else {
-			return nil, invalidVal
+			return nil, invalidVal(p)
 		}
 		break
 

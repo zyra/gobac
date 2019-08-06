@@ -5,7 +5,7 @@ import "encoding/binary"
 type Int8 int8
 
 func (i Int8) MarshalBinary() (b []byte, e error) {
-	b = make([]byte, 1)
+	b = []byte{0,0}
 	binary.PutVarint(b, int64(i))
 	return b, nil
 }

@@ -23,10 +23,7 @@ func (cs *CharacterString) Length() int {
 }
 
 func (cs *CharacterString) MarshalBinary() ([]byte, error) {
-	b := make([]byte, len(cs.Value)+1)
-	b[0] = cs.Encoding
-	copy(b[1:], []byte(cs.Value))
-	return b, nil
+	return append([]byte{cs.Encoding}, []byte(cs.Value)...), nil
 }
 
 func (cs *CharacterString) UnmarshalBinary(b []byte) error {

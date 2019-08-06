@@ -10,7 +10,7 @@ import (
 )
 
 type Request struct {
-	Header types.Header
+	Header *types.Header
 	Npci   *pdu.Npci
 	Apdu   *pdu.Apdu
 	tx     chan *Request
@@ -21,7 +21,7 @@ type Request struct {
 
 func NewRequest() *Request {
 	return &Request{
-		Header: types.Header{
+		Header: &types.Header{
 			ProtocolType: types.BACnetProtocol,
 		},
 		Npci: &pdu.Npci{
@@ -196,19 +196,19 @@ func (r *Request) MarshalBinary() ([]byte, error) {
 }
 
 func (r *Request) UnmarshalBinary(b []byte) error {
+	if len(b) < 6 {
+		return errors.New("byte slice is too short")
+	}
+
 	buff := bytes.NewBuffer(b)
 
-	if b := buff.Next(4); len(b) == 4 {
-		if err := r.Header.UnmarshalBinary(b); err != nil {
-			return err
-		}
-	} else {
-		return errors.New("byte slice is too short")
+	if err := r.Header.UnmarshalBinary(buff.Next(4)); err != nil {
+		return err
 	}
 
 	if b := buff.Bytes(); len(b) < int(r.Header.NsduLength) {
 		return errors.New("byte slice is too short")
-	} else if err := r.Npci.UnmarshalBinary(b); err != nil {
+	} else if err := r.Npci.UnmarshalBinary(buff.Bytes()); err != nil {
 		return err
 	}
 

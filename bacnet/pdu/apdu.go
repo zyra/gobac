@@ -254,14 +254,14 @@ func (a *Apdu) UnmarshalBinary(b []byte) (e error) {
 func (a *Apdu) decodeConfirmedApdu(buff *bytes.Buffer, err *error) {
 	switch a.ServiceChoice {
 	case types.ConfirmedServiceReadProperty:
-		res := ReadPropertyPdu{}
-		a.ResponseData = &res
+		res := &ReadPropertyPdu{}
+		a.ResponseData = res
 		*err = a.ResponseData.UnmarshalBinary(buff.Bytes())
 		return
 
 	case types.ConfirmedServiceCovNotification:
-		res := CovNotification{}
-		a.ResponseData = &res
+		res := &CovNotification{}
+		a.ResponseData = res
 		*err = a.ResponseData.UnmarshalBinary(buff.Bytes())
 		return
 	}
@@ -270,9 +270,9 @@ func (a *Apdu) decodeConfirmedApdu(buff *bytes.Buffer, err *error) {
 func (a *Apdu) decodeUnconfirmedApdu(buff *bytes.Buffer, err *error) {
 	switch a.ServiceChoice {
 	case types.UnconfirmedServiceIAm:
-		res := types.Device{}
+		res := &types.Device{}
 		res.IPAddress = a.SenderIP
-		a.ResponseData = &res
+		a.ResponseData = res
 		*err = res.UnmarshalBinary(buff.Bytes())
 		return
 	}
