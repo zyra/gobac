@@ -41,3 +41,13 @@ func (o *ObjectController) GetAllProperties(server *Server) ([]*types.Property, 
 		return properties, nil
 	}
 }
+
+func (o *ObjectController) GetPresentValue(server *Server) (*types.PropertyValue, error) {
+	p, e := o.GetProperty(server, types.PropertyPresentValue)
+
+	if e != nil || p == nil || p.Values == nil || len(p.Values) == 0 {
+		return nil, e
+	}
+
+	return p.Values[0], nil
+}
