@@ -171,13 +171,13 @@ func (p *Property) UnmarshalBinary(b []byte) (err error) {
 	var l int
 
 	for buff.Len() > 1 {
-		b := buff.Bytes()[0]
-
-		if b&0x08 == 8 {
-			// Context specific tag ahead
-			// break the loop!
-			break
-		}
+		//b := buff.Bytes()[0]
+		//
+		//if b&0x08 == 0x08 {
+		//	// Context specific tag ahead
+		//	// break the loop!
+		//	break
+		//}
 
 		val := PropertyValue{}
 		l, r = val.ValueLength(buff.Bytes())
@@ -188,14 +188,19 @@ func (p *Property) UnmarshalBinary(b []byte) (err error) {
 	}
 
 	// Check closing tag
-	buff.Next(t.DecodeTag(buff.Bytes()))
+	r = t.DecodeTag(buff.Bytes())
 
-	if t.Isnt(tagStart + 2) {
+	switch t.TagNumber {
+	case tagStart + 3:
+		break
+	case tagStart + 2:
+		buff.Next(r)
+		break
+	default:
 		return errors.New("unexpected tag number")
 	}
 
 	p.Values = values
-
 	p.Length = len(b) - buff.Len()
 
 	return
