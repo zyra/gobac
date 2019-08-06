@@ -2,8 +2,8 @@ package pdu
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
-	"github.com/kataras/iris/core/errors"
 	"github.com/zyra/gobac/bacnet/types"
 	"net"
 )

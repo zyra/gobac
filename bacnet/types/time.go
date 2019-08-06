@@ -1,8 +1,8 @@
 package types
 
 import (
+	"errors"
 	"fmt"
-	"github.com/kataras/iris/core/errors"
 	"time"
 )
 

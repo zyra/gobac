@@ -73,7 +73,6 @@ func (p *PropertyValue) ValueLength(b []byte) (length int, bytesRead int) {
 func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 	buff := bytes.NewBuffer(make([]byte, 0))
 
-
 	tag := &Tag{
 		TagNumber: p.Type,
 		LenValue:  0,

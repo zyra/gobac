@@ -3,7 +3,7 @@ package bacnet
 import (
 	"bytes"
 	"encoding"
-	"github.com/kataras/iris/core/errors"
+	"errors"
 	"github.com/zyra/gobac/bacnet/pdu"
 	"github.com/zyra/gobac/bacnet/types"
 	"net"

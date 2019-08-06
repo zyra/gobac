@@ -2,7 +2,7 @@ package types
 
 import (
 	"encoding/binary"
-	"github.com/kataras/iris/core/errors"
+	"errors"
 	"math"
 )
 

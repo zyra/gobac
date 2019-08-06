@@ -5,6 +5,7 @@ import (
 	"github.com/urfave/cli"
 	"github.com/zyra/gobac/bacnet"
 	"github.com/zyra/gobac/bacnet/types"
+	"time"
 )
 
 type ExtendedObject struct {
@@ -19,7 +20,7 @@ type ExtendedDevice struct {
 }
 
 func Scan(ctx *cli.Context) error {
-	devices, err := whois()
+	devices, err := whois(time.Second * 3)
 
 	if err != nil {
 		return err

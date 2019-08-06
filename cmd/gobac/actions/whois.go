@@ -1,14 +1,17 @@
 package actions
 
 import (
+	"errors"
 	"fmt"
-	"github.com/kataras/iris/core/errors"
 	"github.com/urfave/cli"
 	"github.com/zyra/gobac/bacnet/types"
+	"time"
 )
 
 func Whois(ctx *cli.Context) (err error) {
-	devices, err := whois()
+	duration := time.Duration(ctx.GlobalFloat64("duration")) * 1000 * time.Millisecond
+
+	devices, err := whois(duration)
 
 	if err != nil {
 		return err
@@ -21,10 +24,10 @@ func Whois(ctx *cli.Context) (err error) {
 	return
 }
 
-func whois() (devices []*types.Device, err error) {
+func whois(duration time.Duration) (devices []*types.Device, err error) {
 	logVerbose("Sending whois request")
 
-	devices, err = server.WhoIs()
+	devices, err = server.WhoIs(duration)
 
 	if err != nil {
 		return nil, err
