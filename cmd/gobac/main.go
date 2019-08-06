@@ -18,6 +18,13 @@ func main() {
 			Aliases: []string{"wi"},
 			Usage:   "Send a who-is broadcast and listen for responses",
 			Action:  actions.Whois,
+			Flags: []cli.Flag{
+				cli.Float64Flag{
+					Name:  "duration, d",
+					Value: 3,
+					Usage: "how long to listen for broadcasts for",
+				},
+			},
 		},
 		{
 			Name:      "readprop",
@@ -53,7 +60,7 @@ func main() {
 	app.Flags = []cli.Flag{
 		cli.Float64Flag{
 			Name:  "timeout, t",
-			Value: 3,
+			Value: 10,
 			Usage: "timeout for requests in seconds",
 		},
 		cli.UintFlag{
