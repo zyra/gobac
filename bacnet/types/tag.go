@@ -1,13 +1,39 @@
 package types
 
+import "sync"
+
+var tagPool = sync.Pool{
+	New: func() interface{} {
+		return &Tag{}
+	},
+}
+
 type Tag struct {
 	TagNumber uint8
 	LenValue  int
+	Context   bool
+	Extended  bool
+	Opening   bool
+	Closing   bool
+}
+
+func GetTag() *Tag {
+	return tagPool.Get().(*Tag)
+}
+
+func (ct *Tag) Release() {
+	ct.Reset()
+	tagPool.Put(ct)
 }
 
 func (ct *Tag) Is(n uint8) bool {
 	return ct.TagNumber == n
 }
+
+func (ct *Tag) IsContext(n uint8) bool {
+	return ct.Context && ct.Is(n)
+}
+
 func (ct *Tag) Isnt(n uint8) bool {
 	return ct.TagNumber != n
 }
@@ -87,21 +113,21 @@ func (ct *Tag) DecodeTag(b []byte) (bytesRead int) {
 		return 0
 	}
 
-	b1 := b[0]
-	var b2 byte
+	ct.Context = b[0]&BIT3 == BIT3
+
 	bytesRead = 1
 
-	if b1&0xF0 == 0xF0 {
+	if b[0]&0xF0 == 0xF0 {
 		bytesRead++
-		b2 = b[1]
-		ct.TagNumber = b2
+		ct.TagNumber = b[1]
 	} else {
-		ct.TagNumber = b1 >> 4
+		ct.TagNumber = b[0] >> 4
 	}
 
-	switch b1 & 0x07 {
+	switch b[0] & 0x07 {
 	case 5:
-		switch b2 {
+		ct.Extended = true
+		switch b[1] {
 		case 255:
 			v := Uint32(0)
 			_ = v.UnmarshalBinary(b[bytesRead:])
@@ -120,12 +146,16 @@ func (ct *Tag) DecodeTag(b []byte) (bytesRead int) {
 		}
 		break
 
-	case 6, 7:
-		ct.LenValue = 0
+	case 6:
+		ct.Opening = true
+		break
+
+	case 7:
+		ct.Closing = true
 		break
 
 	default:
-		ct.LenValue = int(uint32(b1) & 0x07)
+		ct.LenValue = int(uint32(b[0]) & 0x07)
 	}
 
 	return bytesRead

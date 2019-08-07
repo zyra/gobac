@@ -8,7 +8,7 @@ import (
 )
 
 type Property struct {
-	IPAddress net.IP
+	IPAddress *net.IP
 	ObjectId  *ObjectId
 	ID        PropertyId
 	Index     uint32
@@ -30,9 +30,10 @@ func (p *Property) ReadValuesAsObjects() []*Object {
 }
 
 func (p *Property) MarshalBinary() (b []byte, err error) {
-	buff := bytes.NewBuffer(make([]byte, 0))
+	buff := bytes.NewBuffer([]byte{})
 
-	t := &Tag{}
+	t := GetTag()
+	defer t.Release()
 
 	if p.ObjectId != nil {
 		// encode object ID
@@ -102,12 +103,18 @@ func (p *Property) MarshalBinary() (b []byte, err error) {
 }
 
 func (p *Property) UnmarshalBinary(b []byte) (err error) {
-	buff := bytes.NewBuffer(b)
+	var tagStart uint8
+	var full bool
+	var buff *bytes.Buffer
 
-	full := p.ObjectId == nil
+	buff = GetBuff(b...)
+	defer ReleaseBuff(buff)
 
-	t := &Tag{}
-	tagStart := uint8(0)
+	full = p.ObjectId == nil
+
+	t := GetTag()
+	defer t.Release()
+	tagStart = uint8(0)
 
 	if full {
 		// ObjectID is typically left marshaled
@@ -121,7 +128,7 @@ func (p *Property) UnmarshalBinary(b []byte) (err error) {
 		//
 		buff.Next(t.DecodeTag(buff.Bytes()))
 
-		if t.Isnt(0) {
+		if !t.IsContext(0) {
 			return errors.New("unexpected tag number")
 		}
 
@@ -129,7 +136,7 @@ func (p *Property) UnmarshalBinary(b []byte) (err error) {
 
 		p.ObjectId = &ObjectId{}
 
-		if err := p.ObjectId.UnmarshalBinary(buff.Next(t.LenValue)); err != nil {
+		if err = p.ObjectId.UnmarshalBinary(buff.Next(t.LenValue)); err != nil {
 			return err
 		}
 	}
@@ -139,7 +146,7 @@ func (p *Property) UnmarshalBinary(b []byte) (err error) {
 	//
 	buff.Next(t.DecodeTag(buff.Bytes()))
 
-	if t.Isnt(tagStart) {
+	if !t.IsContext(tagStart) {
 		return errors.New("unexpected tag number")
 	}
 
@@ -150,7 +157,7 @@ func (p *Property) UnmarshalBinary(b []byte) (err error) {
 	//
 	r := t.DecodeTag(buff.Bytes())
 
-	if t.Isnt(tagStart + 1) {
+	if !t.IsContext(tagStart + 1) {
 		p.Index = math.MaxUint32
 	} else {
 		// mark bytes as read
@@ -163,12 +170,12 @@ func (p *Property) UnmarshalBinary(b []byte) (err error) {
 	// Check opening tag
 	buff.Next(t.DecodeTag(buff.Bytes()))
 
-	if t.Isnt(tagStart + 2) {
+	if !t.IsContext(tagStart + 2) {
 		return errors.New("unexpected tag number")
 	}
 
-	values := make([]*PropertyValue, 0)
 	var l int
+	var values []*PropertyValue
 
 	for buff.Len() > 1 {
 		//b := buff.Bytes()[0]
@@ -179,9 +186,16 @@ func (p *Property) UnmarshalBinary(b []byte) (err error) {
 		//	break
 		//}
 
+		r = t.DecodeTag(buff.Bytes())
+		if t.Context {
+			break
+		}
+
 		val := PropertyValue{}
+
 		l, r = val.ValueLength(buff.Bytes())
-		if err := val.UnmarshalBinary(buff.Next(r + l)); err != nil {
+
+		if err = val.UnmarshalBinary(buff.Next(r + l)); err != nil {
 			return err
 		}
 		values = append(values, &val)
@@ -190,14 +204,10 @@ func (p *Property) UnmarshalBinary(b []byte) (err error) {
 	// Check closing tag
 	r = t.DecodeTag(buff.Bytes())
 
-	switch t.TagNumber {
-	case tagStart + 3:
-		break
-	case tagStart + 2:
-		buff.Next(r)
-		break
-	default:
+	if !t.IsContext(tagStart + 2) {
 		return errors.New("unexpected tag number")
+	} else if full {
+		buff.Next(r)
 	}
 
 	p.Values = values

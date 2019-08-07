@@ -16,13 +16,16 @@ type CovNotification struct {
 }
 
 func (n *CovNotification) UnmarshalBinary(b []byte) (err error) {
-	buff := bytes.NewBuffer(b)
+	buff := buffPool.Get().(*bytes.Buffer)
+	buff.Write(b)
+	defer buff.Reset()
+	defer buffPool.Put(buff)
 	t := &types.Tag{}
 
 	// decode process id
 	buff.Next(t.DecodeTag(buff.Bytes()))
 
-	if t.Isnt(0) {
+	if !t.IsContext(0) {
 		return fmt.Errorf("expected tag %d and got %d\n", 0, t.TagNumber)
 	}
 
@@ -33,7 +36,7 @@ func (n *CovNotification) UnmarshalBinary(b []byte) (err error) {
 	// decode deivce obj id
 	buff.Next(t.DecodeTag(buff.Bytes()))
 
-	if t.Isnt(1) {
+	if !t.IsContext(1) {
 		return fmt.Errorf("expected tag %d and got %d\n", 1, t.TagNumber)
 	}
 
@@ -46,7 +49,7 @@ func (n *CovNotification) UnmarshalBinary(b []byte) (err error) {
 	// decode obj id
 	buff.Next(t.DecodeTag(buff.Bytes()))
 
-	if t.Isnt(2) {
+	if !t.IsContext(2) {
 		return fmt.Errorf("expected tag %d and got %d\n", 2, t.TagNumber)
 	}
 
@@ -58,7 +61,7 @@ func (n *CovNotification) UnmarshalBinary(b []byte) (err error) {
 
 	// Decode time remaining
 	buff.Next(t.DecodeTag(buff.Bytes()))
-	if t.Isnt(3) {
+	if !t.IsContext(3) {
 		return fmt.Errorf("expected tag %d and got %d\n", 3, t.TagNumber)
 	}
 
@@ -67,7 +70,7 @@ func (n *CovNotification) UnmarshalBinary(b []byte) (err error) {
 	// Decode opening tag
 	buff.Next(t.DecodeTag(buff.Bytes()))
 
-	if t.Isnt(4) {
+	if !t.IsContext(4) {
 		return fmt.Errorf("expected tag %d and got %d\n", 4, t.TagNumber)
 	}
 
@@ -95,21 +98,27 @@ func (n *CovNotification) UnmarshalBinary(b []byte) (err error) {
 
 		// append prop
 		values = append(values, &val)
-	}
 
-	// Check optional priority
-	r := t.DecodeTag(buff.Bytes())
+		// Check optional priority
+		r := t.DecodeTag(buff.Bytes())
 
-	if t.TagNumber == 3 {
-		buff.Next(r)
-		n.Priority = uint8(t.LenValue)
-	}
+		if t.IsContext(3) {
+			buff.Next(r)
+			n.Priority = uint8(t.LenValue)
+		}
 
-	// Check closing tag
-	buff.Next(t.DecodeTag(buff.Bytes()))
-
-	if t.Isnt(4) {
-		return fmt.Errorf("expected tag %d and got %d\n", 4, t.TagNumber)
+		// Check closing tag
+		r = t.DecodeTag(buff.Bytes())
+		if t.IsContext(4) {
+			buff.Next(r)
+			break
+		} else {
+			lll := buff.Len()
+			if lll == 1 {
+				return fmt.Errorf("expected tag %d and got %d\n", 4, t.TagNumber)
+			}
+			continue
+		}
 	}
 
 	n.Properties = values
