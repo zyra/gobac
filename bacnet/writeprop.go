@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func (s *Server) WriteProperty(deviceAddress net.IP,
+func (s *Server) WriteProperty(deviceAddress *net.IP,
 	objectType,
 	objectInstance types.Uint16,
 	propertyId types.PropertyId,

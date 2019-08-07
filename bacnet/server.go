@@ -226,7 +226,7 @@ func (s *Server) receive(conn *net.UDPConn, ctx context.Context) {
 	}
 }
 
-// Send data to a UDP addr
+// Send covData to a UDP addr
 func (s *Server) Send(bytes []byte, dest *net.UDPAddr) error {
 	_, err := s.UnicastConn.WriteToUDP(bytes, dest)
 	return err
@@ -241,7 +241,7 @@ func (s *Server) handle(data []byte, address *net.UDPAddr) {
 		return
 	}
 
-	if req, err := ParseRequest(data, address.IP); err != nil {
+	if req, err := ParseRequest(data, &address.IP); err != nil {
 		// It failed because either we don't know how to decode it
 		// or it's an invalid request (spam, random packet ...etc).
 		log.Printf("error decoding response: %s\n", err)
@@ -259,7 +259,7 @@ func (s *Server) handle(data []byte, address *net.UDPAddr) {
 					// Probably an old subscription that's not valid anymore
 					// let's unsubscribe and stop this madness
 					println("cancelling a CoV", req.InvokeID(), n.ProcessIdentifier)
-					_, _ = s.SubscribeCov(address.IP, n.ObjectId.Type, n.ObjectId.Instance, n.ProcessIdentifier, true)
+					_, _ = s.SubscribeCov(&address.IP, n.ObjectId.Type, n.ObjectId.Instance, n.ProcessIdentifier, true)
 					return
 				}
 			} else {

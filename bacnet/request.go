@@ -7,7 +7,26 @@ import (
 	"github.com/zyra/gobac/bacnet/pdu"
 	"github.com/zyra/gobac/bacnet/types"
 	"net"
+	"sync"
 )
+
+var reqPool = sync.Pool{
+	New: func() interface{} {
+		req := &Request{
+			Npci:   &pdu.Npci{},
+			Header: &types.Header{},
+			Apdu:   &pdu.Apdu{},
+		}
+		req.Reset()
+		return req
+	},
+}
+
+var buffPool = sync.Pool{
+	New: func() interface{} {
+		return bytes.NewBuffer([]byte{})
+	},
+}
 
 type Request struct {
 	Header *types.Header
@@ -16,30 +35,27 @@ type Request struct {
 	tx     chan *Request
 	//done   chan struct{}
 	//err    chan error
-	sender net.IP
+	sender *net.IP
+}
+
+func (r *Request) Reset() {
+	r.Header.ProtocolType = types.BACnetProtocol
+	r.Npci.Reset()
+	r.Apdu.MaxSegments = 0
+	r.Apdu.MaxApdu = types.MaxApdu
+}
+
+func (r *Request) Release() {
+	r.Reset()
+	r.Apdu.Release()
+	reqPool.Put(r)
 }
 
 func NewRequest() *Request {
-	return &Request{
-		Header: &types.Header{
-			ProtocolType: types.BACnetProtocol,
-		},
-		Npci: &pdu.Npci{
-			ProtocolVersion:     types.BACnetVersion,
-			NetworkLayerMessage: false,
-			IsConfirmed:         false,
-			ExpectingReply:      false,
-			Priority:            types.MessagePriorityNormal,
-			HopCount:            255,
-		},
-		Apdu: &pdu.Apdu{
-			MaxSegments: 0,
-			MaxApdu:     types.MaxApdu,
-		},
-	}
+	return reqPool.Get().(*Request)
 }
 
-func ParseRequest(b []byte, sender net.IP) (*Request, error) {
+func ParseRequest(b []byte, sender *net.IP) (*Request, error) {
 	req := NewRequest()
 	req.sender = sender
 	return req, req.UnmarshalBinary(b)
@@ -97,7 +113,7 @@ func (r *Request) Broadcast(server *Server, responseChoice types.UnconfirmedServ
 	return nil
 }
 
-func (r *Request) Send(dest net.IP, server *Server) error {
+func (r *Request) Send(dest *net.IP, server *Server) error {
 	destUdp := getUdpAddr(dest, server.BroadcastPort)
 
 	if data, err := r.MarshalBinary(); err != nil {
@@ -200,7 +216,10 @@ func (r *Request) UnmarshalBinary(b []byte) error {
 		return errors.New("byte slice is too short")
 	}
 
-	buff := bytes.NewBuffer(b)
+	buff := buffPool.Get().(*bytes.Buffer)
+	buff.Write(b)
+	defer buff.Reset()
+	defer buffPool.Put(buff)
 
 	if err := r.Header.UnmarshalBinary(buff.Next(4)); err != nil {
 		return err

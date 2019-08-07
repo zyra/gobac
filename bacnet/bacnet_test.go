@@ -8,6 +8,7 @@ import (
 	"time"
 )
 
+var config *ServerConfig
 var server *Server
 var devices = make([]*types.Device, 0)
 var device *types.Device
@@ -18,7 +19,7 @@ var ifname = "docker0"
 var err error
 
 func TestNewServer(t *testing.T) {
-	config := NewServerConfig().SetInterfaceName(ifname)
+	config = NewServerConfig().SetInterfaceName(ifname)
 	config.SetDefaultTimeout(time.Second * 3)
 	server, err = NewServer(config)
 
@@ -40,11 +41,23 @@ func TestNewServer(t *testing.T) {
 }
 
 func TestScan(t *testing.T) {
-	devices, err = server.WhoIs(time.Millisecond * 500)
+	dChan, err := server.WhoIs(time.Millisecond * 500)
 
 	if err != nil {
 		t.Error(err)
 		t.FailNow()
+	}
+
+	for {
+		dev, open := <-dChan
+
+		if dev != nil {
+			devices = append(devices, dev)
+		}
+
+		if !open {
+			break
+		}
 	}
 
 	dLen := len(devices)
@@ -134,7 +147,7 @@ func TestWrite(t *testing.T) {
 		}
 	}
 
-	if &obj == nil {
+	if obj == nil {
 		t.Error("couldn't find an AO obj")
 		t.FailNow()
 	}
@@ -206,14 +219,14 @@ func TestServer_SendCovRequest(t *testing.T) {
 	var obj *types.Object
 
 	for _, o := range objects {
-		if ObjectController(*o).ObjectId.Type == types.ObjectTypeMultiStateValue {
+		if ObjectController(*o).ObjectId.Type == types.ObjectTypeAnalogValue {
 			obj = o
 			break
 		}
 	}
 
 	if obj == nil {
-		t.Error("couldn't find an AO obj")
+		t.Error("couldn't find an MSV obj")
 		t.FailNow()
 	}
 
@@ -237,7 +250,7 @@ func TestServer_SendCovRequest(t *testing.T) {
 
 	fmt.Println("sent cov req")
 
-	if err := propCtrl.SetValue(server, TagUnsigned, 2); err != nil {
+	if err := propCtrl.SetValue(server, TagReal, 2); err != nil {
 		t.Error(err)
 	} else {
 
@@ -257,7 +270,7 @@ func TestServer_SendCovRequest(t *testing.T) {
 				var prop *types.PropertyValue
 
 				for _, p := range n.Properties {
-					if p.Values != nil && len(p.Values) > 0 && p.Values[0].Type == types.TagEnumerated {
+					if p.Values != nil && len(p.Values) > 0 && p.Values[0].Type == types.TagReal {
 						prop = p.Values[0]
 						break
 					}
@@ -273,8 +286,8 @@ func TestServer_SendCovRequest(t *testing.T) {
 					t.FailNow()
 				}
 
-				if prop.Value.(uint32) != 2 {
-					t.Errorf("expected value to be %d, got %d", 2, prop.Value.(uint32))
+				if prop.Value.(types.Real) != 2 {
+					t.Errorf("expected value to be %d, got %f", 2, prop.Value.(types.Real))
 					t.FailNow()
 				}
 

@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-func (s *Server) WhoIs(timeout time.Duration) ([]*types.Device, error) {
+func (s *Server) WhoIs(timeout time.Duration) (<-chan *types.Device, error) {
 	req := NewRequest()
 	defer req.Cleanup()
 	req.SetUnconfirmedService(types.UnconfirmedServiceWhoIs, nil)
@@ -16,22 +16,25 @@ func (s *Server) WhoIs(timeout time.Duration) ([]*types.Device, error) {
 		return nil, err
 	}
 
-	devices := make([]*types.Device, 0)
+	dChan := make(chan *types.Device, 128)
 
-Loop:
-	for {
-		select {
-		case <-tc:
-			break Loop
-		case data := <-req.Data():
-			if data.Successful() {
-				if val, ok := data.ResponseData().(*types.Device); ok {
-					devices = append(devices, val)
+	go func() {
+	Loop:
+		for {
+			select {
+			case <-tc:
+				close(dChan)
+				break Loop
+			case data := <-req.Data():
+				if data.Successful() {
+					if val, ok := data.ResponseData().(*types.Device); ok {
+						dChan <- val
+					}
 				}
+				continue
 			}
-			continue
 		}
-	}
+	}()
 
-	return devices, nil
+	return dChan, nil
 }

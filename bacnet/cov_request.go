@@ -24,7 +24,7 @@ func (n *CovNotifier) Error() <-chan error {
 	return n.err
 }
 
-func (s *Server) SubscribeCov(deviceIP net.IP,
+func (s *Server) SubscribeCov(deviceIP *net.IP,
 	objectType types.ObjectType,
 	objectInstance types.Uint16,
 	processID uint8,
@@ -50,7 +50,7 @@ func (s *Server) SubscribeCov(deviceIP net.IP,
 
 	// The first response will be our Ack or Abort/Error/Reject
 	// Let's listen to that first and figure out if this request was successful;
-	// and if it is, we can start listening for the next Acks and emit the data.
+	// and if it is, we can start listening for the next Acks and emit the covData.
 	select {
 	case <-time.After(s.DefaultTimeout):
 		return nil, errors.New("timeout")

@@ -45,18 +45,19 @@ func DecodeVarInt(b []byte) int32 {
 func EncodeVarUint(value uint32) (b []byte) {
 	switch GetUintLen(uint(value)) {
 	case 1:
-		return []byte{uint8(value)}
+		b = append(b, uint8(value))
+		return
 
 	case 2:
 		b, _ = Uint16(value).MarshalBinary()
-		return b
+		return
 
 	case 3:
 		b, _ = Uint24(value).MarshalBinary()
-		return b
+		return
 	default:
 		b, _ = Uint32(value).MarshalBinary()
-		return b
+		return
 	}
 }
 

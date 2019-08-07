@@ -35,7 +35,34 @@ type Apdu struct {
 	Rejected     bool
 	RejectReason types.RejectReason
 
-	SenderIP net.IP
+	SenderIP *net.IP
+}
+
+func (a *Apdu) Reset() {
+	a.PduType = 0
+	a.InvokeID = 0
+	a.MaxSegments = 0
+	a.MaxApdu = 0
+	a.Segmented = false
+	//a.MoreFollows = false
+	//a.SequenceNumber = 0
+	//a.ProposedWindowSize = 0
+	a.ServiceChoice = 0
+	a.Failed = false
+
+	a.RequestData = nil
+	a.ResponseData = nil
+
+	a.Errored = false
+	a.Aborted = false
+	a.Rejected = false
+	a.SenderIP = nil
+}
+
+func (a *Apdu) Release() {
+	if v, ok := a.ResponseData.(*types.Device); ok {
+		v.Release()
+	}
 }
 
 func (a *Apdu) GetPduType() uint8 {
@@ -47,9 +74,10 @@ func (a *Apdu) SetPduType(t uint8) {
 }
 
 func (a *Apdu) MarshalBinary() (b []byte, e error) {
-	buff := bytes.NewBuffer([]byte{
-		byte(a.PduType),
-	})
+	buff := buffPool.Get().(*bytes.Buffer)
+	buff.WriteByte(byte(a.PduType))
+	defer buff.Reset()
+	defer buffPool.Put(buff)
 
 	// write invoke ID if we have one
 	if a.InvokeID > 0 {
@@ -79,7 +107,10 @@ func (a *Apdu) MarshalBinary() (b []byte, e error) {
 }
 
 func (a *Apdu) UnmarshalBinary(b []byte) (e error) {
-	buff := bytes.NewBuffer(b)
+	buff := buffPool.Get().(*bytes.Buffer)
+	buff.Write(b)
+	defer buff.Reset()
+	defer buffPool.Put(buff)
 
 	magicByte, e := buff.ReadByte()
 
@@ -270,7 +301,7 @@ func (a *Apdu) decodeConfirmedApdu(buff *bytes.Buffer, err *error) {
 func (a *Apdu) decodeUnconfirmedApdu(buff *bytes.Buffer, err *error) {
 	switch a.ServiceChoice {
 	case types.UnconfirmedServiceIAm:
-		res := &types.Device{}
+		res := types.NewDevice()
 		res.IPAddress = a.SenderIP
 		a.ResponseData = res
 		*err = res.UnmarshalBinary(buff.Bytes())

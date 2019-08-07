@@ -9,8 +9,8 @@ import (
 type networkSet struct {
 	InterfaceName string
 	Interface     *net.Interface
-	IPv4          net.IP
-	BroadcastIPv4 net.IP
+	IPv4          *net.IP
+	BroadcastIPv4 *net.IP
 }
 
 func getNetworkSet(ifname string) (*networkSet, error) {
@@ -25,8 +25,8 @@ func getNetworkSet(ifname string) (*networkSet, error) {
 		Interface:     iface,
 	}
 
-	var sourceIP net.IP
-	var broadcastIp net.IP
+	var sourceIP *net.IP
+	var broadcastIp *net.IP
 
 	addrs, err := iface.Addrs()
 
@@ -45,14 +45,14 @@ func getNetworkSet(ifname string) (*networkSet, error) {
 		ip = ip.To4()
 
 		if ip != nil {
-			broadcastIp = net.IP{
+			broadcastIp = &net.IP{
 				ip[0] | ^nt.Mask[0],
 				ip[1] | ^nt.Mask[1],
 				ip[2] | ^nt.Mask[2],
 				ip[3] | ^nt.Mask[3],
 			}
 
-			sourceIP = ip
+			sourceIP = &ip
 			break
 		}
 	}
@@ -71,9 +71,9 @@ func getNetworkSet(ifname string) (*networkSet, error) {
 	return ns, nil
 }
 
-func getUdpAddr(ip net.IP, port uint16) *net.UDPAddr {
+func getUdpAddr(ip *net.IP, port uint16) *net.UDPAddr {
 	return &net.UDPAddr{
-		IP:   ip,
+		IP:   *ip,
 		Port: int(port),
 	}
 }

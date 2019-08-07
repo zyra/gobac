@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func (s *Server) ReadProperty(address net.IP, objectType, objectInstance types.Uint16, propertyId types.PropertyId) ([]*types.PropertyValue, error) {
+func (s *Server) ReadProperty(address *net.IP, objectType, objectInstance types.Uint16, propertyId types.PropertyId) ([]*types.PropertyValue, error) {
 	req := NewRequest()
 	defer req.Cleanup()
 

@@ -100,7 +100,7 @@ func BenchmarkPropertyValue_MarshalBinary(b *testing.B) {
 	var e error
 
 	for i, v := range values {
-		for k := 0; k < 1e5; k++ {
+		for k := 0; k < 1e4; k++ {
 			bb, e = v.MarshalBinary()
 		}
 
@@ -118,7 +118,7 @@ func BenchmarkPropertyValue_UnmarshalBinary(b *testing.B) {
 
 	var e error
 	for _, v := range binaries {
-		for k := 0; k < 1e6; k++ {
+		for k := 0; k < 1e4; k++ {
 			e = val.UnmarshalBinary(v)
 		}
 

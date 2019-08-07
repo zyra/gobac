@@ -1,24 +1,49 @@
 package types
 
 import (
-	"bytes"
 	"errors"
 	"net"
+	"sync"
 )
+
+var devPool = sync.Pool{
+	New: func() interface{} {
+		return new(Device)
+	},
+}
 
 type Device struct {
 	Object
-	MACAddress      net.HardwareAddr
+	MACAddress      *net.HardwareAddr
 	MaxAPDU         Uint32
 	OriginInterface string
 	VendorID        Uint16
 	Segmentation    Segmentation
 }
 
-func (d *Device) UnmarshalBinary(data []byte) error {
-	buff := bytes.NewBuffer(data)
+func NewDevice() *Device {
+	return devPool.Get().(*Device)
+}
 
-	t := &Tag{}
+func (d *Device) Reset() {
+	d.Object.Reset()
+	d.MACAddress = nil
+	d.MaxAPDU = 0
+	d.VendorID = 0
+	d.Segmentation = 0
+}
+
+func (d *Device) Release() {
+	d.Reset()
+	devPool.Put(d)
+}
+
+func (d *Device) UnmarshalBinary(data []byte) error {
+	buff := GetBuff(data...)
+	defer ReleaseBuff(buff)
+
+	t := GetTag()
+	defer t.Release()
 
 	//
 	// Decode device ID

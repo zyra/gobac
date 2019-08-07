@@ -13,7 +13,9 @@ type SubscribeCov struct {
 }
 
 func (p *SubscribeCov) MarshalBinary() ([]byte, error) {
-	buff := bytes.NewBuffer(make([]byte, 0))
+	buff := buffPool.Get().(*bytes.Buffer)
+	defer buff.Reset()
+	defer buffPool.Put(buff)
 
 	t := &types.Tag{}
 

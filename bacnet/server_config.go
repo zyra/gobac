@@ -22,7 +22,7 @@ type ServerConfig struct {
 	//
 	// The concurrency should be tweaked depending on the expected number of
 	// devices on the network, or the expected number of concurrent requests.
-	// UDP doesn't establish a connection before sending data, so for example if
+	// UDP doesn't establish a connection before sending covData, so for example if
 	// you Send a WhoIs request to a network with 300 devices and your concurrency
 	// is lower than 300, there is a chance that you might miss some of the
 	// broadcasts sent by these devices.

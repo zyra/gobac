@@ -1,7 +1,6 @@
 package types
 
 import (
-	"bytes"
 	"fmt"
 )
 
@@ -31,7 +30,8 @@ func (h *Header) MarshalBinary() (b []byte, e error) {
 }
 
 func (h *Header) UnmarshalBinary(b []byte) error {
-	buff := bytes.NewBuffer(b)
+	buff := GetBuff(b...)
+	defer ReleaseBuff(buff)
 
 	if b, e := buff.ReadByte(); e != nil {
 		return e

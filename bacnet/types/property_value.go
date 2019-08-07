@@ -88,18 +88,19 @@ func (p *PropertyValue) ReadAsString() string {
 }
 
 func (p *PropertyValue) ValueLength(b []byte) (length int, bytesRead int) {
-	t := Tag{}
+	t := GetTag()
+	defer t.Release()
 	bytesRead = t.DecodeTag(b)
 	return t.LenValue, bytesRead
 }
 
 func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
-	buff := bytes.NewBuffer(make([]byte, 0))
+	buff := bytes.NewBuffer([]byte{})
 
-	tag := &Tag{
-		TagNumber: p.Type,
-		LenValue:  0,
-	}
+	tag := GetTag()
+	defer tag.Release()
+
+	tag.TagNumber = p.Type
 
 	switch p.Type {
 	case TagNull:
@@ -117,11 +118,15 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 
 	case TagUnsigned,
 		TagEnumerated:
-		if !reflect.TypeOf(p.Value).ConvertibleTo(typeOfUint32) {
-			return nil, invalidVal(p)
+		if _, ok := p.Value.(uint32); !ok {
+			if !reflect.TypeOf(p.Value).ConvertibleTo(typeOfUint32) {
+				return nil, invalidVal(p)
+			}
+
+			p.Value = uint32(reflect.ValueOf(p.Value).Convert(typeOfUint32).Uint())
 		}
 
-		p.Value = uint32(reflect.ValueOf(p.Value).Convert(typeOfUint32).Uint())
+
 		uintBytes := EncodeVarUint(p.Value.(uint32))
 
 		tag.LenValue = len(uintBytes)
@@ -134,11 +139,14 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 		break
 
 	case TagSigned:
-		if !reflect.TypeOf(p.Value).ConvertibleTo(typeOfInt32) {
-			return nil, invalidVal(p)
+		if _, ok := p.Value.(int32); !ok {
+			if !reflect.TypeOf(p.Value).ConvertibleTo(typeOfInt32) {
+				return nil, invalidVal(p)
+			}
+
+			p.Value = int32(reflect.ValueOf(p.Value).Convert(typeOfInt32).Int())
 		}
 
-		p.Value = int32(reflect.ValueOf(p.Value).Convert(typeOfInt32).Int())
 		uintBytes := EncodeVarInt(p.Value.(int32))
 		tag.LenValue = len(uintBytes)
 
@@ -150,11 +158,14 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 		break
 
 	case TagReal:
-		if !reflect.TypeOf(p.Value).ConvertibleTo(typeOfFloat32) {
-			return nil, invalidVal(p)
+		if _, ok := p.Value.(float32); !ok {
+			if !reflect.TypeOf(p.Value).ConvertibleTo(typeOfFloat32) {
+				return nil, invalidVal(p)
+			}
+
+			p.Value = float32(reflect.ValueOf(p.Value).Convert(typeOfFloat32).Float())
 		}
 
-		p.Value = float32(reflect.ValueOf(p.Value).Convert(typeOfFloat32).Float())
 		tag.LenValue = 4
 
 		if _, err := buff.Write(tag.EncodeTag()); err != nil {
@@ -170,11 +181,14 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 		break
 
 	case TagDouble:
-		if !reflect.TypeOf(p.Value).ConvertibleTo(typeOfFloat) {
-			return nil, invalidVal(p)
+		if _, ok := p.Value.(float64); !ok {
+			if !reflect.TypeOf(p.Value).ConvertibleTo(typeOfFloat) {
+				return nil, invalidVal(p)
+			}
+
+			p.Value = reflect.ValueOf(p.Value).Convert(typeOfFloat).Float()
 		}
 
-		p.Value = reflect.ValueOf(p.Value).Convert(typeOfFloat).Float()
 		tag.LenValue = 8
 
 		if _, err := buff.Write(tag.EncodeTag()); err != nil {
@@ -305,8 +319,12 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 }
 
 func (p *PropertyValue) UnmarshalBinary(b []byte) (err error) {
-	t := Tag{}
-	r := t.DecodeTag(b)
+	var t *Tag
+	var r int
+
+	t = GetTag()
+	defer t.Release()
+	r = t.DecodeTag(b)
 	p.Type = t.TagNumber
 
 	switch p.Type {

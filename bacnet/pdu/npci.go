@@ -20,13 +20,32 @@ type Npci struct {
 
 	DestinationNet    types.Uint16
 	DestinationLength uint8
-	DestinationMAC    net.HardwareAddr
-	DestinationIP     net.IP
+	DestinationMAC    *net.HardwareAddr
+	DestinationIP     *net.IP
 
 	SourceNet    types.Uint16
 	SourceLength uint8
-	SourceMAC    net.HardwareAddr
-	SourceIP     net.IP
+	SourceMAC    *net.HardwareAddr
+	SourceIP     *net.IP
+}
+
+func (n *Npci) Reset() {
+	n.ProtocolVersion = types.BACnetVersion
+	n.NetworkLayerMessage = false
+	n.IsConfirmed = false
+	n.ExpectingReply = false
+	n.Priority = types.MessagePriorityNormal
+	n.HopCount = 255
+	n.ControlOctet = 0
+	n.Length = 0
+	n.DestinationNet = 0
+	n.DestinationLength = 0
+	n.DestinationMAC = nil
+	n.DestinationIP = nil
+	n.SourceNet = 0
+	n.SourceLength = 0
+	n.SourceMAC = nil
+	n.SourceIP = nil
 }
 
 func (n *Npci) MarshalBinary() (b []byte, e error) {
@@ -121,11 +140,13 @@ func (n *Npci) UnmarshalBinary(b []byte) error {
 
 			if destLen > 0 {
 				if b := buff.Next(destLen); len(b) == destLen {
-					n.DestinationMAC = make(net.HardwareAddr, destLen)
+					destMac := make(net.HardwareAddr, destLen)
 
 					for i := 0; i < destLen; i++ {
-						n.DestinationMAC[i] = b[i]
+						destMac[i] = b[i]
 					}
+
+					n.DestinationMAC = &destMac
 				}
 			}
 		}
@@ -159,11 +180,13 @@ func (n *Npci) UnmarshalBinary(b []byte) error {
 
 			if srcLen > 0 {
 				if b := buff.Next(srcLen); len(b) == srcLen {
-					n.SourceMAC = make(net.HardwareAddr, srcLen)
+					srcMac := make(net.HardwareAddr, srcLen)
 
 					for i := 0; i < srcLen; i++ {
-						n.SourceMAC[i] = b[i]
+						srcMac[i] = b[i]
 					}
+
+					n.SourceMAC = &srcMac
 
 					//n.SourceIP = []net.IP{n.SourceMAC[0], n.SourceMAC[1], n.SourceMAC[2], n.SourceMAC[3]}
 				}

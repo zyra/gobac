@@ -9,7 +9,7 @@ import (
 )
 
 func Whois(ctx *cli.Context) (err error) {
-	duration := time.Duration(ctx.Float64("duration")* 1000)  * time.Millisecond
+	duration := time.Duration(ctx.Float64("duration")*1000) * time.Millisecond
 
 	devices, err := whois(duration)
 
@@ -27,10 +27,25 @@ func Whois(ctx *cli.Context) (err error) {
 func whois(duration time.Duration) (devices []*types.Device, err error) {
 	logVerbose("Sending whois request")
 
-	devices, err = server.WhoIs(duration)
+	devices = make([]*types.Device, 0)
+
+	dChan, err := server.WhoIs(duration)
 
 	if err != nil {
 		return nil, err
+	}
+
+	for {
+		dev, open := <-dChan
+
+		if dev != nil {
+			devices = append(devices, dev)
+			logVerbosef("Found a new device with instance %d at %s", dev.ObjectId.Instance, dev.IPAddress)
+		}
+
+		if !open {
+			break
+		}
 	}
 
 	lenDevices := len(devices)
