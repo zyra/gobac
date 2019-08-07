@@ -84,7 +84,7 @@ func WritePropAction(ctx *cli.Context) (err error) {
 
 	logVerbosef("Writing property %d on object %d instance %d...\n", propertyId, objectType, objectInstance)
 
-	if err := server.WriteProperty(address, objectType, objectInstance, propertyId, tag, priority, parsedVal); err != nil {
+	if err := server.WriteProperty(&address, objectType, objectInstance, propertyId, tag, priority, parsedVal); err != nil {
 		return err
 	} else {
 		fmt.Println("Write was successful!")

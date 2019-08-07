@@ -40,7 +40,7 @@ func ReadProp(ctx *cli.Context) (err error) {
 
 	logVerbosef("Reading property %d on object %d instance %d...\n", propertyId, objectType, objectInstance)
 
-	prop, err := server.ReadProperty(address, objectType, objectInstance, propertyId)
+	prop, err := server.ReadProperty(&address, objectType, objectInstance, propertyId)
 
 	if err != nil {
 		return err
