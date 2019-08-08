@@ -1,9 +1,9 @@
 package bacnet
 
 import (
+	"context"
 	"fmt"
 	"github.com/zyra/gobac/bacnet/types"
-	"os"
 	"testing"
 	"time"
 )
@@ -14,38 +14,66 @@ var devices = make([]*types.Device, 0)
 var device *types.Device
 var devCtrl *DeviceController
 var objects = make([]*types.Object, 0)
-var isBench = os.Getenv("BENCH") != ""
 var ifname = "docker0"
 var err error
+var ctx context.Context
 
-func TestNewServer(t *testing.T) {
+func configureServer() {
 	config = NewServerConfig().SetInterfaceName(ifname)
 	config.SetDefaultTimeout(time.Second * 3)
+}
+
+func createTestServer() error {
+	if config == nil {
+		configureServer()
+	}
+
 	server, err = NewServer(config)
 
 	if err != nil {
-		t.Error(err)
-		t.FailNow()
+		return err
 	}
 
 	if server.InterfaceName != ifname {
-		t.Errorf("expected interface name to be %s and got %s\n", ifname, server.InterfaceName)
-		t.FailNow()
+		return fmt.Errorf("expected interface name to be %s and got %s\n", ifname, server.InterfaceName)
 	}
 
 	fmt.Println("Starting Server..")
-	go server.Listen(nil)
+	go server.Listen(ctx)
 
 	<-server.Start()
 	fmt.Println("Server started")
+
+	return nil
 }
 
-func TestScan(t *testing.T) {
-	dChan, err := server.WhoIs(time.Millisecond * 500)
+func TestNewServer(t *testing.T) {
+	configureServer()
+	if err := createTestServer(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func BenchmarkNewServer(b *testing.B) {
+	c, cc := context.WithCancel(context.Background())
+	ctx = c
+
+	if err := createTestServer(); err != nil {
+		b.Fatal(err)
+	}
+
+	cc()
+
+	<-server.close
+}
+
+var count = 0
+
+func testScan() error {
+	dChan, err := server.WhoIs(time.Millisecond * 250)
 
 	if err != nil {
-		t.Error(err)
-		t.FailNow()
+		return err
 	}
 
 	for {
@@ -58,19 +86,32 @@ func TestScan(t *testing.T) {
 		if !open {
 			break
 		}
+		count++
 	}
 
-	dLen := len(devices)
+	//dLen := len(devices)
+	//
+	//if dLen <= 0 {
+	//	return errors.New("no devices found")
+	//}
+	//
+	//fmt.Printf("Found %d devices\n", dLen)
 
-	if dLen <= 0 {
-		t.Error("No devices found")
-		t.FailNow()
+	//for _, d := range devices {
+	//	fmt.Printf("> Device ID: %d\n", d.ObjectId.Instance)
+	//}
+
+
+	return nil
+}
+
+func TestScan(t *testing.T) {
+	if err := testScan(); err != nil {
+		t.Fatal(err)
 	}
 
-	fmt.Printf("Found %d devices\n", dLen)
-
-	for _, d := range devices {
-		fmt.Printf("> Device ID: %d\n", d.ObjectId.Instance)
+	if len(devices) == 0 {
+		t.Fatal("no devices found")
 	}
 
 	device = devices[0]
@@ -78,9 +119,28 @@ func TestScan(t *testing.T) {
 	devCtrl = &ctrl
 }
 
-type stats struct {
-	s int
-	f int
+func BenchmarkScan(b *testing.B) {
+	c, cc := context.WithCancel(context.Background())
+
+	ctx = c
+
+	configureServer()
+
+	if err := createTestServer(); err != nil {
+		b.Fatal(err)
+	}
+
+	for i := 0; i < 100; i++ {
+		if err := testScan(); err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	fmt.Println(count)
+
+	cc()
+
+	<-server.close
 }
 
 func TestObjects(t *testing.T) {
@@ -88,35 +148,9 @@ func TestObjects(t *testing.T) {
 		t.FailNow()
 	}
 
-	if isBench {
-		//twg := &sync.WaitGroup{}
-		s := &stats{0, 0}
-
-		fmt.Printf("going to get objects from %d devices\n", len(devices))
-
-		//for i := 0; i < len(devices); i++ {
-		//twg.Add(1)
-		//go func(wg *sync.WaitGroup, device *Device, s *stats) {
-		//	defer wg.Done()
-		if objs, err := devCtrl.GetObjects(server); err != nil {
-			fmt.Printf("error getting objects: %s\n", err)
-			s.f++
-		} else {
-			s.s++
-			objects = objs
-		}
-		//}(twg, devices[i], s)
-		//}
-
-		//twg.Wait()
-
-		fmt.Printf("Total success: %d\nTotal failure: %d\n", s.s, s.f)
-	}
-
 	if objs, err := devCtrl.GetObjects(server); err != nil {
 		fmt.Printf("error getting objects: %s\n", err)
-		t.Error(err)
-		t.FailNow()
+		t.Fatal(err)
 	} else {
 		objects = objs
 	}
@@ -124,20 +158,13 @@ func TestObjects(t *testing.T) {
 	olen := len(objects)
 
 	if olen <= 0 {
-		t.Error("No objects found")
-		t.FailNow()
+		t.Fatal("No objects found")
 	}
 
 	fmt.Println(len(objects))
 }
 
 func TestWrite(t *testing.T) {
-	//return
-	if len(objects) == 0 {
-		t.Error("objects array has length of 0")
-		t.FailNow()
-	}
-
 	var obj *types.Object
 
 	for _, o := range objects {
@@ -183,11 +210,6 @@ func TestWrite(t *testing.T) {
 }
 
 func TestReadAll(t *testing.T) {
-	if len(objects) < 1 {
-		t.FailNow()
-	}
-
-	//return
 	for i, o := range objects {
 		if i == 0 {
 			// skip device
@@ -211,11 +233,6 @@ func TestReadAll(t *testing.T) {
 }
 
 func TestServer_SendCovRequest(t *testing.T) {
-	if len(objects) < 1 {
-		t.Error("objects array has length of 0")
-		t.FailNow()
-	}
-
 	var obj *types.Object
 
 	for _, o := range objects {

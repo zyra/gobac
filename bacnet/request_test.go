@@ -50,11 +50,10 @@ var readProp97Data = []byte{
 }
 
 var i = 0
-var max int = 1e3
 var sender = &net.IP{255, 255, 255, 255}
 
 func BenchmarkParseRequestCov(b *testing.B) {
-	for i = 0; i < max; i++ {
+	for i = 0; i < b.N; i++ {
 		req, err := ParseRequest(covData, sender)
 		if err != nil {
 			b.Error(err)
@@ -65,7 +64,7 @@ func BenchmarkParseRequestCov(b *testing.B) {
 }
 
 func BenchmarkParseRequestIAm(b *testing.B) {
-	for i = 0; i < max; i++ {
+	for i = 0; i < b.N; i++ {
 		req, err := ParseRequest(iAmData, sender)
 		if err != nil {
 			b.Error(err)
@@ -76,7 +75,7 @@ func BenchmarkParseRequestIAm(b *testing.B) {
 }
 
 func BenchmarkParseRequest371(b *testing.B) {
-	for i = 0; i < max; i++ {
+	for i = 0; i < b.N; i++ {
 		req, err := ParseRequest(readProp371Data, sender)
 		if err != nil {
 			b.Error(err)
@@ -87,7 +86,7 @@ func BenchmarkParseRequest371(b *testing.B) {
 }
 
 func BenchmarkParseRequest76(b *testing.B) {
-	for i = 0; i < max; i++ {
+	for i = 0; i < b.N; i++ {
 		req, err := ParseRequest(readProp76Data, sender)
 		if err != nil {
 			b.Error(err)
@@ -98,7 +97,7 @@ func BenchmarkParseRequest76(b *testing.B) {
 }
 
 func BenchmarkParseRequest121(b *testing.B) {
-	for i = 0; i < max; i++ {
+	for i = 0; i < b.N; i++ {
 		req, err := ParseRequest(readProp121Data, sender)
 		if err != nil {
 			b.Error(err)
@@ -109,7 +108,7 @@ func BenchmarkParseRequest121(b *testing.B) {
 }
 
 func BenchmarkParseRequest97(b *testing.B) {
-	for i = 0; i < max; i++ {
+	for i = 0; i < b.N; i++ {
 		req, err := ParseRequest(readProp97Data, sender)
 		if err != nil {
 			b.Error(err)

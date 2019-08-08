@@ -47,7 +47,6 @@ func (r *Request) Reset() {
 
 func (r *Request) Release() {
 	r.Reset()
-	r.Apdu.Release()
 	reqPool.Put(r)
 }
 
@@ -79,7 +78,7 @@ func (r *Request) SetUnconfirmedService(choice types.UnconfirmedService, data en
 	r.Apdu.RequestData = data
 	r.Npci.DestinationNet = 65535
 	r.Header.Function = types.BvlcFunctionOriginalBroadcastNpdu
-	r.tx = make(chan *Request, 128)
+	r.tx = make(chan *Request, 10)
 	//r.err = make(chan error, 128)
 }
 
@@ -127,13 +126,6 @@ func (r *Request) Send(dest *net.IP, server *Server) error {
 	}
 
 	return nil
-}
-
-func (r *Request) Cleanup() {
-	//ReleaseInvokeID(r.Apdu.InvokeID)
-	//close(r.tx)
-	//close(r.err)
-	//close(r.done)
 }
 
 func (r *Request) Data() <-chan *Request {

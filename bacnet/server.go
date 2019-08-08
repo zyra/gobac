@@ -22,7 +22,7 @@ type Server struct {
 	BroadcastConn  *net.UDPConn // Broadcast
 	DefaultTimeout time.Duration
 
-	close   chan int
+	close   chan struct{}
 	closing bool
 
 	wg *sync.WaitGroup
@@ -30,7 +30,7 @@ type Server struct {
 	rcvErrors bool
 	error     chan error
 
-	start chan int
+	start chan struct{}
 
 	cHandlersMtx   *sync.RWMutex
 	cHandlers      *[255]chan<- *Request
@@ -38,8 +38,6 @@ type Server struct {
 	ucHandlersMtx  *sync.RWMutex
 	covHandlers    *[255]chan<- *Request
 	covHandlersMtx *sync.RWMutex
-
-	concurrency uint
 }
 
 // Create a new Server object with the provided configuration
@@ -61,9 +59,8 @@ func NewServer(config *ServerConfig) (*Server, error) {
 		covHandlers:    &[255]chan<- *Request{},
 		covHandlersMtx: new(sync.RWMutex),
 		networkSet:     ns,
-		concurrency:    config.Concurrency,
-		close:          make(chan int),
-		start:          make(chan int),
+		close:          make(chan struct{}),
+		start:          make(chan struct{}),
 		wg:             &sync.WaitGroup{},
 	}
 
@@ -73,7 +70,7 @@ func NewServer(config *ServerConfig) (*Server, error) {
 		// Let's create a buffered channel with the
 		// size of the total listeners we could have
 		s.rcvErrors = true
-		s.error = make(chan error, config.Concurrency*2)
+		s.error = make(chan error, 50)
 	}
 
 	return s, nil
@@ -102,18 +99,12 @@ func (s *Server) Listen(ctx context.Context) {
 		panic(err)
 	} else {
 		s.BroadcastConn = conn
-		if err := conn.SetReadBuffer(types.MaxApdu); err != nil && s.rcvErrors {
-			s.error <- err
-		}
 	}
 
 	if conn, err := net.ListenUDP("udp", s.ServerAddr); err != nil {
 		panic(err)
 	} else {
 		s.UnicastConn = conn
-		if err := conn.SetReadBuffer(types.MaxMpdu); err != nil && s.rcvErrors {
-			s.error <- err
-		}
 	}
 
 	if deadline, ok := ctx.Deadline(); ok {
@@ -135,18 +126,17 @@ func (s *Server) Listen(ctx context.Context) {
 	s.ReceiveBroadcast(ctx)
 	s.ReceiveUnicast(ctx)
 
-	s.start <- 1
 	close(s.start)
 
 	<-ctx.Done()
 	s.closeConn()
 }
 
-func (s *Server) Start() <-chan int {
+func (s *Server) Start() <-chan struct{} {
 	return s.start
 }
 
-func (s *Server) Close() <-chan int {
+func (s *Server) Close() <-chan struct{} {
 	return s.close
 }
 
@@ -158,8 +148,8 @@ func (s *Server) closeConn() {
 	if err := s.BroadcastConn.Close(); err != nil {
 		log.Printf("Error closing connection: %s\n", err)
 	}
-	s.close <- 1
-	s.start = make(chan int)
+	s.close <- struct{}{}
+	s.start = make(chan struct{})
 }
 
 func (s *Server) ReceiveBroadcast(ctx context.Context) {
@@ -175,9 +165,7 @@ func (s *Server) ReceiveBroadcast(ctx context.Context) {
 		}
 	}
 
-	for i := uint(0); i < s.concurrency; i++ {
-		go s.receive(s.BroadcastConn, ctx)
-	}
+	go s.receive(s.BroadcastConn, ctx)
 }
 
 func (s *Server) ReceiveUnicast(ctx context.Context) {
@@ -185,12 +173,24 @@ func (s *Server) ReceiveUnicast(ctx context.Context) {
 		ctx = context.Background()
 	}
 
-	for i := uint(0); i < s.concurrency; i++ {
-		go s.receive(s.UnicastConn, ctx)
-	}
+	go s.receive(s.UnicastConn, ctx)
+}
+
+var rxBuffPool = sync.Pool{
+	New: func() interface{} {
+		arr := new([types.MaxMpdu]byte)
+		return arr[:]
+	},
+
 }
 
 func (s *Server) receive(conn *net.UDPConn, ctx context.Context) {
+	var n int
+	var addr *net.UDPAddr
+	var err error
+	var errVal net.Error
+	var ok bool
+
 	// Loop forever unless we're shutting down
 	for {
 		select {
@@ -199,9 +199,10 @@ func (s *Server) receive(conn *net.UDPConn, ctx context.Context) {
 
 		default:
 			// Create a byte slice with MAX_MPDU as the length/cap
-			b := make([]byte, types.MaxMpdu, types.MaxMpdu)
-			if n, addr, err := conn.ReadFromUDP(b); err != nil {
-				if errVal, ok := err.(net.Error); ok {
+			b := rxBuffPool.Get().([]byte)
+
+			if n, addr, err = conn.ReadFromUDP(b); err != nil {
+				if errVal, ok = err.(net.Error); ok {
 					if errVal.Timeout() {
 						// Timeout error
 						continue
@@ -212,12 +213,8 @@ func (s *Server) receive(conn *net.UDPConn, ctx context.Context) {
 					s.error <- err
 				}
 			} else {
-				// Send a copy of the bytes to the handle function along with
-				// the IP address of the sender.
-				//
-				// Let's also splice our byte slice to only Send the bytes
-				// that were written by this request.
-				go s.handle(b[:n], addr)
+				go s.handle(b, n, &*addr)
+				continue
 			}
 		}
 	}
@@ -230,7 +227,9 @@ func (s *Server) Send(bytes []byte, dest *net.UDPAddr) error {
 }
 
 // Handle a response
-func (s *Server) handle(data []byte, address *net.UDPAddr) {
+func (s *Server) handle(data []byte, n int, address *net.UDPAddr) {
+	defer rxBuffPool.Put(data)
+
 	// Ignore any request that originated from our IP address
 	// This is most likely going to be a broadcast that we sent.
 	if address.IP.Equal(s.ServerAddr.IP) {
@@ -238,7 +237,7 @@ func (s *Server) handle(data []byte, address *net.UDPAddr) {
 		return
 	}
 
-	if req, err := ParseRequest(data, &address.IP); err != nil {
+	if req, err := ParseRequest(data[:n], &address.IP); err != nil {
 		// It failed because either we don't know how to decode it
 		// or it's an invalid request (spam, random packet ...etc).
 		log.Printf("error decoding response: %s\n", err)
@@ -269,8 +268,6 @@ func (s *Server) handle(data []byte, address *net.UDPAddr) {
 
 		if h != nil {
 			h <- req
-			//close(h)
-			//s.RemoveConfirmedHandler(req.InvokeID())
 		} else {
 			//log.Printf("no handler was registered for invoke id %d, ignoring this message\n", req.InvokeID())
 		}
@@ -278,8 +275,6 @@ func (s *Server) handle(data []byte, address *net.UDPAddr) {
 		h := s.getUnconfirmedHandler(req.ServiceChoice())
 		if h != nil {
 			h <- req
-			//close(h)
-			//s.RemoveUnconfirmedHandler(req.ServiceChoice())
 		} else {
 			//log.Printf("no handler was registered for unconfirmed choice %d, ignoring this message\n", req.ServiceChoice())
 		}

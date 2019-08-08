@@ -10,7 +10,7 @@ import (
 
 func (s *Server) ReadProperty(address *net.IP, objectType, objectInstance types.Uint16, propertyId types.PropertyId) ([]*types.PropertyValue, error) {
 	req := NewRequest()
-	defer req.Cleanup()
+	defer req.Release()
 
 	req.SetConfirmedService(types.ConfirmedServiceReadProperty, &pdu.ReadPropertyPdu{
 		Property: &types.Property{

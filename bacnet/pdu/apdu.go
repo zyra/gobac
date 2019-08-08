@@ -59,12 +59,6 @@ func (a *Apdu) Reset() {
 	a.SenderIP = nil
 }
 
-func (a *Apdu) Release() {
-	if v, ok := a.ResponseData.(*types.Device); ok {
-		v.Release()
-	}
-}
-
 func (a *Apdu) GetPduType() uint8 {
 	return uint8(a.PduType)
 }

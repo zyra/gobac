@@ -17,7 +17,7 @@ func (s *Server) WriteProperty(deviceAddress *net.IP,
 	value interface{}) error {
 
 	req := NewRequest()
-	defer req.Cleanup()
+	defer req.Release()
 
 	req.SetConfirmedService(types.ConfirmedServiceWriteProperty, &pdu.WriteProperty{
 		Property: &types.Property{

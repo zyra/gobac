@@ -30,7 +30,7 @@ func (s *Server) SubscribeCov(deviceIP *net.IP,
 	processID uint8,
 	cancel bool) (*CovNotifier, error) {
 	req := NewRequest()
-	defer req.Cleanup()
+	defer req.Release()
 
 	handler := make(chan *Request, 128)
 
