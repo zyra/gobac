@@ -191,18 +191,15 @@ func (s *Server) ReceiveUnicast(ctx context.Context) {
 }
 
 func (s *Server) receive(conn *net.UDPConn, ctx context.Context) {
-	// Create a byte slice with MAX_MPDU as the length/cap
-	// We will re-use this for every request
-	b := make([]byte, types.MaxMpdu, types.MaxMpdu)
-
 	// Loop forever unless we're shutting down
 	for {
 		select {
 		case <-ctx.Done():
-			b = nil
 			return
 
 		default:
+			// Create a byte slice with MAX_MPDU as the length/cap
+			b := make([]byte, types.MaxMpdu, types.MaxMpdu)
 			if n, addr, err := conn.ReadFromUDP(b); err != nil {
 				if errVal, ok := err.(net.Error); ok {
 					if errVal.Timeout() {
