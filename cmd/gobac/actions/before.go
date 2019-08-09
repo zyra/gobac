@@ -37,7 +37,6 @@ func Before(c *cli.Context) error {
 	serverConfig := bacnet.NewServerConfig()
 	serverConfig.SetDefaultTimeout(time.Duration(c.GlobalFloat64("timeout")*1000) * time.Millisecond)
 	serverConfig.SetInterfaceName(c.GlobalString("interface"))
-	serverConfig.SetConcurrency(c.GlobalUint("concurrency"))
 	serverConfig.SetReceiveErrors(true)
 	serverConfig.SetListenPort(uint16(c.GlobalUint("port")))
 	serverConfig.SetServerBBMDPort(uint16(c.GlobalUint("server-port")))
