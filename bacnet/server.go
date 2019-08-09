@@ -181,7 +181,6 @@ var rxBuffPool = sync.Pool{
 		arr := new([types.MaxMpdu]byte)
 		return arr[:]
 	},
-
 }
 
 func (s *Server) receive(conn *net.UDPConn, ctx context.Context) {
@@ -240,7 +239,7 @@ func (s *Server) handle(data []byte, n int, address *net.UDPAddr) {
 	if req, err := ParseRequest(data[:n], &address.IP); err != nil {
 		// It failed because either we don't know how to decode it
 		// or it's an invalid request (spam, random packet ...etc).
-		log.Printf("error decoding response: %s\n", err)
+		//log.Printf("error decoding response: %s\n", err)
 		return
 	} else if req.InvokeID() > 0 {
 		ReleaseInvokeID(req.InvokeID())
