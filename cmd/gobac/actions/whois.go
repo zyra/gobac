@@ -1,10 +1,12 @@
 package actions
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/urfave/cli"
 	"github.com/zyra/gobac/bacnet/types"
+	"sort"
 	"time"
 )
 
@@ -15,6 +17,13 @@ func Whois(ctx *cli.Context) (err error) {
 
 	if err != nil {
 		return err
+	}
+
+	if ctx.GlobalBool("json") {
+		if j, _ := json.Marshal(devices); j != nil {
+			fmt.Println(string(j))
+			return
+		}
 	}
 
 	for i, d := range devices {
@@ -50,11 +59,15 @@ func whois(duration time.Duration) (devices []*types.Device, err error) {
 
 	lenDevices := len(devices)
 
-	fmt.Printf("Found %d devices\n\n", lenDevices)
+	logVerbosef("Found %d devices\n\n", lenDevices)
 
 	if lenDevices == 0 {
 		return nil, errors.New("no devices found")
 	}
+
+	sort.Slice(devices, func(i, j int) bool {
+		return devices[i].DeviceID < devices[j].DeviceID
+	})
 
 	return devices, nil
 }

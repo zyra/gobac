@@ -60,7 +60,7 @@ func main() {
 	app.Flags = []cli.Flag{
 		cli.Float64Flag{
 			Name:  "timeout, t",
-			Value: 10,
+			Value: 5,
 			Usage: "timeout for requests in seconds",
 		},
 		cli.UintFlag{
@@ -78,14 +78,13 @@ func main() {
 			Value: "eno0",
 			Usage: "interface name to bind to",
 		},
-		cli.UintFlag{
-			Name:  "concurrency, c",
-			Value: 5,
-			Usage: "concurrent listeners to run",
-		},
 		cli.BoolFlag{
 			Name:  "verbose, V",
 			Usage: "verbose logging",
+		},
+		cli.BoolFlag{
+			Name:  "json, j",
+			Usage: "output json",
 		},
 	}
 

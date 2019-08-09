@@ -1,10 +1,14 @@
 package actions
 
 import (
+	"encoding/json"
+	"fmt"
 	"github.com/fatih/color"
 	"github.com/urfave/cli"
 	"github.com/zyra/gobac/bacnet"
 	"github.com/zyra/gobac/bacnet/types"
+	"log"
+	"sync"
 	"time"
 )
 
@@ -26,67 +30,105 @@ func Scan(ctx *cli.Context) error {
 		return err
 	}
 
-	out := make([]*ExtendedDevice, 0, len(devices))
+	isJson := ctx.GlobalBool("json")
+
+	out := make([]*ExtendedDevice, len(devices), len(devices))
+
+	wg := sync.WaitGroup{}
+	wg.Add(len(devices))
 
 	for i, d := range devices {
-		ed := ExtendedDevice{
-			Device: d,
-		}
+		go func(i int, d *types.Device) {
+			defer wg.Done()
 
-		color.Cyan("| Device [%d/%d] | ID: %d | IP: %s \n", i+1, len(devices), d.ObjectId.Instance, d.IPAddress.String())
-
-		oc := bacnet.ObjectController(d.Object)
-
-		// Get all properties
-		if props, err := oc.GetAllProperties(server); err != nil {
-			return nil
-		} else {
-			ed.Properties = props
-			for iii, p := range props {
-				color.HiYellow("|--| Property <%d/%d> | ID: %d \n", iii+1, len(props), p.ID)
-
-				for iiii, v := range p.Values {
-					color.Blue("|--|-->> Value <%d/%d>: %s \n", iiii+1, len(p.Values), v.ReadAsString())
-				}
+			ed := ExtendedDevice{
+				Device: d,
 			}
-		}
 
-		// Get all objects
-		objs, err := bacnet.DeviceController(*d).GetObjects(server)
+			if !isJson {
+				color.Cyan("| Device [%d/%d] | ID: %d | IP: %s \n", i+1, len(devices), d.ObjectId.Instance, d.IPAddress.String())
+			}
 
-		if err != nil {
-			return err
-		}
+			oc := bacnet.ObjectController(d.Object)
 
-		eObjs := make([]*ExtendedObject, len(objs))
-
-		for ii, o := range objs {
-			color.Magenta("|--| Object [%d/%d] | Type: %d | ID %d \n", ii+1, len(objs), o.ObjectId.Type, o.ObjectId.Instance)
-
-			c := bacnet.ObjectController(*o)
-			if props, err := c.GetAllProperties(server); err != nil {
-				return err
+			// Get all properties
+			if props, err := oc.GetAllProperties(server); err != nil {
+				log.Fatal(err)
 			} else {
-				eObj := &ExtendedObject{
-					Properties: props,
-					Object:     o,
-				}
+				ed.Properties = props
 
-				eObjs = append(eObjs, eObj)
+				if !isJson {
+					for iii, p := range props {
+						color.HiYellow("|--| Property <%d/%d> | ID: %d \n", iii+1, len(props), p.ID)
 
-				for iii, p := range props {
-					color.HiYellow("|--|--| Property <%d/%d> | ID: %d \n", iii+1, len(props), p.ID)
-
-					for iiii, v := range p.Values {
-						color.Blue("|--|--|-->> Value <%d/%d>: %s \n", iiii+1, len(p.Values), v.ReadAsString())
+						for iiii, v := range p.Values {
+							color.Blue("|--|-->> Value <%d/%d>: %s \n", iiii+1, len(p.Values), v.ReadAsString())
+						}
 					}
 				}
+
 			}
-		}
 
-		ed.Objects = eObjs
+			// Get all objects
+			objs, err := bacnet.DeviceController(*d).GetObjects(server)
 
-		out = append(out, &ed)
+			if err != nil {
+				println("Error getting objects", err.Error())
+				log.Fatal(err)
+			}
+
+			eObjs := make([]*ExtendedObject, len(objs))
+
+			objsWg := sync.WaitGroup{}
+			objsWg.Add(len(objs))
+
+			for ii, o := range objs {
+				if !isJson {
+					color.Magenta("|--| Object [%d/%d] | Type: %d | ID %d \n", ii+1, len(objs), o.ObjectId.Type, o.ObjectId.Instance)
+				}
+
+				go func(ii int, o *types.Object) {
+					defer objsWg.Done()
+
+					c := bacnet.ObjectController(*o)
+					if props, err := c.GetAllProperties(server); err != nil {
+						println("Error getting propss", err.Error())
+						log.Fatal(err)
+					} else {
+						eObj := &ExtendedObject{
+							Properties: props,
+							Object:     o,
+						}
+
+						eObjs[ii] = eObj
+
+						if !isJson {
+							for iii, p := range props {
+								color.HiYellow("|--|--| Property <%d/%d> | ID: %d \n", iii+1, len(props), p.ID)
+
+								for iiii, v := range p.Values {
+									color.Blue("|--|--|-->> Value <%d/%d>: %s \n", iiii+1, len(p.Values), v.ReadAsString())
+								}
+							}
+						}
+
+					}
+				}(ii, o)
+			}
+
+			objsWg.Wait()
+
+			ed.Objects = eObjs
+			out[i] = &ed
+		}(i, d)
+	}
+
+	wg.Wait()
+
+	if j, e := json.Marshal(out); e != nil {
+		log.Fatal("Error marshasling to json", e)
+	} else {
+		fmt.Println(string(j))
 	}
 
 	return nil
