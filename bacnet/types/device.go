@@ -64,6 +64,8 @@ func (d *Device) UnmarshalBinary(data []byte) error {
 		return err
 	}
 
+	d.DeviceID = d.ObjectId.Instance
+
 	// make sure the type is correct
 	if d.ObjectId.Type != ObjectTypeDevice {
 		return errors.New("object type isn't a device")
