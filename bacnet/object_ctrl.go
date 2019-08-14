@@ -1,6 +1,9 @@
 package bacnet
 
-import "github.com/zyra/gobac/bacnet/types"
+import (
+	"github.com/zyra/gobac/bacnet/types"
+	"strings"
+)
 
 type ObjectController types.Object
 
@@ -25,21 +28,51 @@ func (o ObjectController) RawValue() *types.Object {
 }
 
 func (o *ObjectController) GetAllProperties(server *Server) ([]*types.Property, error) {
-	if propIds, err := o.GetProperty(server, 371); err != nil {
+	propIds := make([]types.PropertyId, 0)
+
+	propIdsProp, err := o.GetProperty(server, 371)
+
+	if err != nil {
+		if strings.Contains(err.Error(), "ErrorCodeUnknownProperty") {
+			// Device doesn't support property 371
+			// let's check for known properties
+			propIds = []types.PropertyId{
+				types.PropertyObjectName,
+				types.PropertyObjectList,
+				types.PropertyDescription,
+				types.PropertyPresentValue,
+				types.PropertyModelName,
+				types.PropertyVendorName,
+				types.PropertyVendorIdentifier,
+				types.PropertySystemStatus,
+				types.PropertyLocation,
+				types.PropertyFirmwareRevision,
+				types.PropertyApplicationSoftwareVersion,
+			}
+		} else {
+			return nil, err
+		}
+	} else if propIdsProp == nil || propIdsProp.Values == nil {
 		return nil, err
 	} else {
-		properties := make([]*types.Property, 0, len(propIds.Values))
-
-		for _, p := range propIds.Values {
-			if prop, err := o.GetProperty(server, p.Value.(uint32)); err != nil {
-				continue
-			} else {
-				properties = append(properties, prop)
+		for _, v := range propIdsProp.Values {
+			if vv, ok := v.Value.(uint32); ok {
+				propIds = append(propIds, vv)
 			}
 		}
-
-		return properties, nil
 	}
+
+	properties := make([]*types.Property, 0, len(propIds))
+
+	for _, p := range propIds {
+		if prop, err := o.GetProperty(server, p); err != nil {
+			continue
+		} else {
+			properties = append(properties, prop)
+		}
+	}
+
+	return properties, nil
 }
 
 func (o *ObjectController) GetPresentValue(server *Server) (*types.PropertyValue, error) {
