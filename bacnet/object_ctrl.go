@@ -64,6 +64,8 @@ func (o *ObjectController) GetAllProperties(server *Server) ([]*types.Property, 
 
 	properties := make([]*types.Property, 0, len(propIds))
 
+	propIds = append(propIds, types.PropertyObjectName)
+
 	for _, p := range propIds {
 		if prop, err := o.GetProperty(server, p); err != nil {
 			continue

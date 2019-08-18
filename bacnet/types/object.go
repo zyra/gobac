@@ -8,6 +8,7 @@ type Object struct {
 	IPAddress    *net.IP
 	ObjectId     *ObjectId
 	PresentValue *PropertyValue // TODO revise this
+	Name         string
 	Description  string
 	DeviceID     Uint16
 }
@@ -17,5 +18,6 @@ func (o *Object) Reset() {
 	o.ObjectId = nil
 	o.PresentValue = nil
 	o.Description = ""
+	o.Name = ""
 	o.DeviceID = 0
 }

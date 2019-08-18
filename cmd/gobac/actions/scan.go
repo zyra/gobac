@@ -3,7 +3,6 @@ package actions
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/fatih/color"
 	"github.com/urfave/cli"
 	"github.com/zyra/gobac/bacnet"
 	"github.com/zyra/gobac/bacnet/types"
@@ -19,8 +18,8 @@ type ExtendedObject struct {
 
 type ExtendedDevice struct {
 	*types.Device
-	ExtendedObject
-	Objects []*ExtendedObject
+	Properties []*types.Property
+	Objects    []*ExtendedObject
 }
 
 func Scan(ctx *cli.Context) error {
@@ -30,7 +29,7 @@ func Scan(ctx *cli.Context) error {
 		return err
 	}
 
-	isJson := ctx.GlobalBool("json")
+	//isJson := ctx.GlobalBool("json")
 
 	out := make([]*ExtendedDevice, len(devices), len(devices))
 
@@ -45,9 +44,9 @@ func Scan(ctx *cli.Context) error {
 				Device: d,
 			}
 
-			if !isJson {
-				color.Cyan("| Device [%d/%d] | ID: %d | IP: %s \n", i+1, len(devices), d.ObjectId.Instance, d.IPAddress.String())
-			}
+			//if !isJson {
+			//	color.Cyan("| Device [%d/%d] | ID: %d | IP: %s \n", i+1, len(devices), d.ObjectId.Instance, d.IPAddress.String())
+			//}
 
 			oc := bacnet.ObjectController(d.Object)
 
@@ -57,15 +56,28 @@ func Scan(ctx *cli.Context) error {
 			} else {
 				ed.Properties = props
 
-				if !isJson {
-					for iii, p := range props {
-						color.HiYellow("|--| Property <%d/%d> | ID: %d \n", iii+1, len(props), p.ID)
+				for _, p := range props {
+					switch p.ID {
+					case types.PropertyObjectName:
+						ed.Name = p.Values[0].ReadAsString()
 
-						for iiii, v := range p.Values {
-							color.Blue("|--|-->> Value <%d/%d>: %s \n", iiii+1, len(p.Values), v.ReadAsString())
-						}
+						break
+
+					case types.PropertyDescription:
+						ed.Description = p.Values[0].ReadAsString()
+						break
 					}
 				}
+
+				//if !isJson {
+				//	for iii, p := range props {
+				//		color.HiYellow("|--| Property <%d/%d> | ID: %d \n", iii+1, len(props), p.ID)
+				//
+				//		for iiii, v := range p.Values {
+				//			color.Blue("|--|-->> Value <%d/%d>: %s \n", iiii+1, len(p.Values), v.ReadAsString())
+				//		}
+				//	}
+				//}
 
 			}
 
@@ -83,9 +95,9 @@ func Scan(ctx *cli.Context) error {
 			objsWg.Add(len(objs))
 
 			for ii, o := range objs {
-				if !isJson {
-					color.Magenta("|--| Object [%d/%d] | Type: %d | ID %d \n", ii+1, len(objs), o.ObjectId.Type, o.ObjectId.Instance)
-				}
+				//if !isJson {
+				//	color.Magenta("|--| Object [%d/%d] | Type: %d | ID %d \n", ii+1, len(objs), o.ObjectId.Type, o.ObjectId.Instance)
+				//}
 
 				go func(ii int, o *types.Object) {
 					defer objsWg.Done()
@@ -100,17 +112,29 @@ func Scan(ctx *cli.Context) error {
 							Object:     o,
 						}
 
-						eObjs[ii] = eObj
+						for _, p := range props {
+							switch p.ID {
+							case types.PropertyObjectName:
+								eObj.Name = p.Values[0].ReadAsString()
+								break
 
-						if !isJson {
-							for iii, p := range props {
-								color.HiYellow("|--|--| Property <%d/%d> | ID: %d \n", iii+1, len(props), p.ID)
-
-								for iiii, v := range p.Values {
-									color.Blue("|--|--|-->> Value <%d/%d>: %s \n", iiii+1, len(p.Values), v.ReadAsString())
-								}
+							case types.PropertyDescription:
+								eObj.Description = p.Values[0].ReadAsString()
+								break
 							}
 						}
+
+						eObjs[ii] = eObj
+
+						//if !isJson {
+						//	for iii, p := range props {
+						//		color.HiYellow("|--|--| Property <%d/%d> | ID: %d \n", iii+1, len(props), p.ID)
+						//
+						//		for iiii, v := range p.Values {
+						//			color.Blue("|--|--|-->> Value <%d/%d>: %s \n", iiii+1, len(p.Values), v.ReadAsString())
+						//		}
+						//	}
+						//}
 
 					}
 				}(ii, o)
