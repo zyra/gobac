@@ -13,7 +13,9 @@ import (
 
 type ExtendedObject struct {
 	*types.Object
-	Properties []*types.Property
+	Properties  []*types.Property
+	FloatValue  float64
+	StringValue string
 }
 
 type ExtendedDevice struct {
@@ -120,6 +122,12 @@ func Scan(ctx *cli.Context) error {
 
 							case types.PropertyDescription:
 								eObj.Description = p.Values[0].ReadAsString()
+								break
+
+							case types.PropertyPresentValue:
+								eObj.PresentValue = p.Values[0]
+								eObj.FloatValue = p.Values[0].ReadAsFloat64()
+								eObj.StringValue = p.Values[0].ReadAsString()
 								break
 							}
 						}
