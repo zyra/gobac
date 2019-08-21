@@ -4,7 +4,7 @@ import (
 	"sync"
 )
 
-var transactions = make([]bool, 255)
+var transactions = map[uint8]bool{}
 var mtx sync.RWMutex
 
 func GetInvokeID() uint8 {
@@ -13,7 +13,7 @@ func GetInvokeID() uint8 {
 
 	mtx.Lock()
 	for i = 1; i < 255; i++ {
-		if exists := transactions[uint8(i)]; exists {
+		if val, ok := transactions[uint8(i)]; ok && val {
 			continue
 		}
 		invokeId = i
@@ -36,6 +36,8 @@ func ReleaseInvokeID(invokeId uint8) {
 	}
 
 	mtx.Lock()
-	transactions[invokeId] = false
+	if _, ok := transactions[invokeId]; ok {
+		transactions[invokeId] = false
+	}
 	mtx.Unlock()
 }
