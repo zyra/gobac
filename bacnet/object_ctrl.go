@@ -48,6 +48,7 @@ func (o *ObjectController) GetAllProperties(server *Server) ([]*types.Property, 
 				types.PropertyLocation,
 				types.PropertyFirmwareRevision,
 				types.PropertyApplicationSoftwareVersion,
+				types.PropertyStateText,
 			}
 		} else {
 			return nil, err
