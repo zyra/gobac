@@ -101,7 +101,6 @@ func testScan() error {
 	//	fmt.Printf("> Device ID: %d\n", d.ObjectId.Instance)
 	//}
 
-
 	return nil
 }
 
@@ -220,6 +219,16 @@ func TestReadAll(t *testing.T) {
 
 		objCtrl := ObjectController(*o)
 
+		if p, err := objCtrl.GetProperty(server, types.PropertyObjectName); err != nil {
+			fmt.Println(err)
+		} else {
+			fmt.Println("name is ", p.Values[0].ReadAsString())
+		}
+
+		if p, err := objCtrl.GetProperty(server, types.PropertyStateText); err == nil && p != nil {
+			fmt.Println(p.Values[0].ReadAsString(), len(p.Values))
+		}
+
 		if _, err := objCtrl.GetProperty(server, types.PropertyPresentValue); err != nil {
 			fmt.Println(err)
 		}
@@ -233,6 +242,8 @@ func TestReadAll(t *testing.T) {
 }
 
 func TestServer_SendCovRequest(t *testing.T) {
+	return
+
 	var obj *types.Object
 
 	for _, o := range objects {
