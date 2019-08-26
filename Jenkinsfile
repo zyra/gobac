@@ -9,5 +9,4 @@ node {
     }
   }
 
-  stage('Push latest'
 }
