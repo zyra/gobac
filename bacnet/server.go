@@ -285,6 +285,9 @@ func (s *Server) getConfirmedHandler(deviceIP *net.IP, invokeId uint8) chan<- *R
 		return nil
 	}
 
+	s.cHandlersMtx.RLock()
+	defer s.cHandlersMtx.RUnlock()
+
 	if h := s.cHandlers[deviceIP.String()+"."+strconv.Itoa(int(invokeId))]; h != nil {
 		return h
 	}
@@ -298,6 +301,7 @@ func (s *Server) SetConfirmedHandler(deviceIP *net.IP, invokeId uint8, handler c
 
 	s.cHandlersMtx.Lock()
 	defer s.cHandlersMtx.Unlock()
+
 	s.cHandlers[deviceIP.String()+"."+strconv.Itoa(int(invokeId))] = handler
 }
 
@@ -308,6 +312,7 @@ func (s *Server) RemoveConfirmedHandler(deviceIP *net.IP, invokeId uint8) {
 
 	s.cHandlersMtx.Lock()
 	defer s.cHandlersMtx.Unlock()
+
 	s.cHandlers[deviceIP.String()+"."+strconv.Itoa(int(invokeId))] = nil
 }
 
@@ -316,6 +321,7 @@ func (s *Server) getCovHandler(deviceIP *net.IP, processId uint8) chan<- *Reques
 		//fmt.Println("getCovHandler got processId 0!")
 		return nil
 	}
+
 	s.covHandlersMtx.RLock()
 	defer s.covHandlersMtx.RUnlock()
 
