@@ -207,11 +207,20 @@ func (s *BacnetTestSuite) Test5Server_SendCovRequest() {
 
 	propCtrl := PropertyController(*prop)
 
-	req, err := s.Server.SubscribeCov(obj.IPAddress, obj.ObjectId.Type, obj.ObjectId.Instance, 2, false)
+	req, err := s.Server.SubscribeCov(obj.IPAddress, obj.ObjectId.Type, obj.ObjectId.Instance, 5, false)
 
 	if !s.NoError(err) {
 		return
 	}
+
+	defer func() {
+		println("unsubscribing")
+		_, err = s.Server.SubscribeCov(obj.IPAddress, obj.ObjectId.Type, obj.ObjectId.Instance, 5, true)
+
+		if !s.NoError(err) {
+			return
+		}
+	}()
 
 	fmt.Println("sent cov req")
 
@@ -223,46 +232,42 @@ func (s *BacnetTestSuite) Test5Server_SendCovRequest() {
 
 	fmt.Println("Value was set to 2")
 
-	for {
-		select {
-		case <-time.After(time.Second * 3):
-			if !s.NoError(err) {
-				return
-			}
-		case n := <-req.Data():
-			if n.ObjectId.Type != objCtrl.ObjectId.Type || n.ObjectId.Instance != objCtrl.ObjectId.Instance {
-				continue
-			}
+	select {
+	case <-time.After(time.Second * 3):
+		s.Fail("did not receive a COV notification after 3 seconds")
 
-			var prop *types.PropertyValue
-
-			for _, p := range n.Properties {
-				if p.Values != nil && len(p.Values) > 0 && p.Values[0].Type == types.TagReal {
-					prop = p.Values[0]
-					break
-				}
-			}
-
-			if prop == nil {
-				continue
-			}
-
-			fmt.Println("Got a property!", prop)
-			if !s.NotNil(prop.Value) {
-				return
-			}
-
-			if !s.EqualValues(2, prop.Value.(types.Real)) {
-				return
-			}
-
-			fmt.Println("all good!")
+	case n := <-req.Data():
+		if !s.Equal(objCtrl.ObjectId.Type, n.ObjectId.Type) || !s.Equal(objCtrl.ObjectId.Instance, n.ObjectId.Instance) {
 			return
+		}
 
-		case err = <-req.Error():
-			if !s.NoError(err) {
-				return
+		var prop *types.PropertyValue
+
+		for _, p := range n.Properties {
+			if p.Values != nil && len(p.Values) > 0 && p.Values[0].Type == types.TagReal {
+				prop = p.Values[0]
+				break
 			}
+		}
+
+		if !s.NotNil(prop) {
+			return
+		}
+
+		fmt.Println("Got a property!", prop)
+		if !s.NotNil(prop.Value) {
+			return
+		}
+
+		if !s.EqualValues(2, prop.Value.(types.Real)) {
+			return
+		}
+
+		fmt.Println("all good!")
+
+	case err = <-req.Error():
+		if !s.NoError(err) {
+			return
 		}
 	}
 }

@@ -4,15 +4,15 @@ type ConfirmedService = uint8
 
 const (
 	ConfirmedServiceReadProperty    ConfirmedService = 12
-	ConfirmedServiceWriteProperty                    = 15
-	ConfirmedServiceSubscribeCov                     = 5
-	ConfirmedServiceCovNotification                  = 1
+	ConfirmedServiceWriteProperty   ConfirmedService = 15
+	ConfirmedServiceSubscribeCov    ConfirmedService = 5
+	ConfirmedServiceCovNotification ConfirmedService = 1
 )
 
 type UnconfirmedService = uint8
 
 const (
 	UnconfirmedServiceIAm             UnconfirmedService = 0
-	UnconfirmedServiceCovNotification                    = 0x2
-	UnconfirmedServiceWhoIs                              = 0x8
+	UnconfirmedServiceCovNotification UnconfirmedService = 0x2
+	UnconfirmedServiceWhoIs           UnconfirmedService = 0x8
 )

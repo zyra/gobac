@@ -237,7 +237,7 @@ func (s *Server) handle(data []byte, n int, address *net.UDPAddr) {
 		return
 	}
 
-	if req, err := ParseRequest(data[:n], &address.IP); err != nil {
+	if req, err := ParseRequest(data[:n], address); err != nil {
 		// It failed because either we don't know how to decode it
 		// or it's an invalid request (spam, random packet ...etc).
 		//log.Printf("error decoding response: %s\n", err)

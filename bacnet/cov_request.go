@@ -96,6 +96,7 @@ func (n *CovNotifier) startListening(server *Server) {
 		if data := <-n.handler; data.Successful() {
 			if val, ok := data.ResponseData().(*pdu.CovNotification); ok {
 				n.out <- val
+				n.sendAck(server, data)
 			} else {
 				n.err <- errors.New("error decoding response")
 			}
@@ -108,5 +109,27 @@ func (n *CovNotifier) startListening(server *Server) {
 		} else {
 			n.err <- errors.New("internal error")
 		}
+	}
+}
+
+func (n *CovNotifier) sendAck(server *Server, nReq *Request) {
+	req := NewRequest()
+	defer req.Release()
+
+	req.Apdu.ServiceChoice = types.ConfirmedServiceCovNotification
+	req.Apdu.RequestData = nil // just in case
+	req.Apdu.PduType = types.PduTypeSimpleAck
+	req.Apdu.InvokeID = nReq.InvokeID()
+	req.Npci.ExpectingReply = false
+	req.Npci.IsConfirmed = true
+
+	if data, err := req.MarshalBinary(); err == nil {
+		err = server.Send(data, nReq.Sender)
+
+		if err != nil {
+			panic(err)
+		}
+	} else {
+		panic(err)
 	}
 }

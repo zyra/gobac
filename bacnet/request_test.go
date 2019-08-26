@@ -50,7 +50,10 @@ var readProp97Data = []byte{
 }
 
 var i = 0
-var sender = &net.IP{255, 255, 255, 255}
+var sender = &net.UDPAddr{
+	IP:   net.IP{255, 255, 255, 255},
+	Port: 0xBAC0,
+}
 
 func BenchmarkParseRequestCov(b *testing.B) {
 	for i = 0; i < b.N; i++ {

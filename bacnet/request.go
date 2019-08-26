@@ -35,7 +35,7 @@ type Request struct {
 	tx     chan *Request
 	//done   chan struct{}
 	//err    chan error
-	sender *net.IP
+	Sender *net.UDPAddr
 }
 
 func (r *Request) Reset() {
@@ -54,9 +54,9 @@ func NewRequest() *Request {
 	return reqPool.Get().(*Request)
 }
 
-func ParseRequest(b []byte, sender *net.IP) (*Request, error) {
+func ParseRequest(b []byte, sender *net.UDPAddr) (*Request, error) {
 	req := NewRequest()
-	req.sender = sender
+	req.Sender = sender
 	return req, req.UnmarshalBinary(b)
 }
 
@@ -226,7 +226,7 @@ func (r *Request) UnmarshalBinary(b []byte) error {
 	// mark bytes as read
 	buff.Next(r.Npci.Length)
 
-	r.Apdu.SenderIP = r.sender
+	r.Apdu.SenderIP = &r.Sender.IP
 
 	if err := r.Apdu.UnmarshalBinary(buff.Bytes()); err != nil {
 		return err
