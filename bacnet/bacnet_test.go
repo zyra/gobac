@@ -3,84 +3,68 @@ package bacnet
 import (
 	"context"
 	"fmt"
+	"github.com/stretchr/testify/suite"
 	"github.com/zyra/gobac/bacnet/types"
 	"testing"
 	"time"
 )
 
-var config *ServerConfig
-var server *Server
-var devices = make([]*types.Device, 0)
-var device *types.Device
-var devCtrl *DeviceController
-var objects = make([]*types.Object, 0)
 var ifname = "docker0"
 var err error
 var ctx context.Context
 
-func configureServer() {
-	config = NewServerConfig().SetInterfaceName(ifname)
-	config.SetDefaultTimeout(time.Second * 3)
+type BacnetTestSuite struct {
+	suite.Suite
+	Config *ServerConfig
+	Server *Server
+
+	Devices []*types.Device
+	Device  *types.Device
+	DevCtrl *DeviceController
+
+	Objects []*types.Object
 }
 
-func createTestServer() error {
-	if config == nil {
-		configureServer()
-	}
+func (s *BacnetTestSuite) SetupSuite() {
+	s.Config = NewServerConfig()
 
-	server, err = NewServer(config)
+	s.Config.SetInterfaceName(ifname).SetDefaultTimeout(time.Second * 3)
+
+	s.Server, err = NewServer(s.Config)
+
+	s.NoError(err)
 
 	if err != nil {
-		return err
+		return
 	}
 
-	if server.InterfaceName != ifname {
-		return fmt.Errorf("expected interface name to be %s and got %s\n", ifname, server.InterfaceName)
-	}
+	s.Equal(s.Server.InterfaceName, ifname)
 
-	fmt.Println("Starting Server..")
-	go server.Listen(ctx)
+	go s.Server.Listen(ctx)
 
-	<-server.Start()
-	fmt.Println("Server started")
-
-	return nil
+	<-s.Server.Start()
 }
 
-func TestNewServer(t *testing.T) {
-	configureServer()
-	if err := createTestServer(); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func BenchmarkNewServer(b *testing.B) {
-	c, cc := context.WithCancel(context.Background())
-	ctx = c
-
-	if err := createTestServer(); err != nil {
-		b.Fatal(err)
-	}
-
-	cc()
-
-	<-server.close
+func (s *BacnetTestSuite) TearDownSuite() {
+	s.Server.Close()
 }
 
 var count = 0
 
-func testScan() error {
-	dChan, err := server.WhoIs(time.Millisecond * 250)
+func (s *BacnetTestSuite) Test1Scan() {
+	dChan, err := s.Server.WhoIs(time.Millisecond * 500)
+
+	s.NoError(err)
 
 	if err != nil {
-		return err
+		return
 	}
 
 	for {
 		dev, open := <-dChan
 
 		if dev != nil {
-			devices = append(devices, dev)
+			s.Devices = append(s.Devices, dev)
 		}
 
 		if !open {
@@ -89,151 +73,109 @@ func testScan() error {
 		count++
 	}
 
-	//dLen := len(devices)
-	//
-	//if dLen <= 0 {
-	//	return errors.New("no devices found")
-	//}
-	//
-	//fmt.Printf("Found %d devices\n", dLen)
+	s.NotEmpty(s.Devices)
 
-	//for _, d := range devices {
-	//	fmt.Printf("> Device ID: %d\n", d.ObjectId.Instance)
-	//}
+	if len(s.Devices) == 0 {
+		return
+	}
 
-	return nil
+	s.Device = s.Devices[0]
+
+	ctrl := DeviceController(*s.Device)
+	s.DevCtrl = &ctrl
 }
 
-func TestScan(t *testing.T) {
-	if err := testScan(); err != nil {
-		t.Fatal(err)
+func (s *BacnetTestSuite) Test2Objects() {
+	s.NotEmpty(s.Devices)
+	s.NotNil(s.DevCtrl)
+
+	objs, err := s.DevCtrl.GetObjects(s.Server)
+
+	s.NoError(err)
+
+	if err != nil {
+		return
 	}
 
-	if len(devices) == 0 {
-		t.Fatal("no devices found")
-	}
+	s.Objects = objs
 
-	device = devices[0]
-	ctrl := DeviceController(*device)
-	devCtrl = &ctrl
+	s.NotEmpty(s.Objects)
 }
 
-func BenchmarkScan(b *testing.B) {
-	c, cc := context.WithCancel(context.Background())
+func (s *BacnetTestSuite) Test3Write() {
+	s.NotEmpty(s.Objects)
 
-	ctx = c
-
-	configureServer()
-
-	if err := createTestServer(); err != nil {
-		b.Fatal(err)
-	}
-
-	for i := 0; i < 100; i++ {
-		if err := testScan(); err != nil {
-			b.Fatal(err)
-		}
-	}
-
-	fmt.Println(count)
-
-	cc()
-
-	<-server.close
-}
-
-func TestObjects(t *testing.T) {
-	if len(devices) < 1 {
-		t.FailNow()
-	}
-
-	if objs, err := devCtrl.GetObjects(server); err != nil {
-		fmt.Printf("error getting objects: %s\n", err)
-		t.Fatal(err)
-	} else {
-		objects = objs
-	}
-
-	olen := len(objects)
-
-	if olen <= 0 {
-		t.Fatal("No objects found")
-	}
-
-	fmt.Println(len(objects))
-}
-
-func TestWrite(t *testing.T) {
 	var obj *types.Object
 
-	for _, o := range objects {
+	for _, o := range s.Objects {
 		if o.ObjectId.Type == types.ObjectTypeAnalogValue {
 			obj = o
 			break
 		}
 	}
 
+	s.NotNil(obj)
+
 	if obj == nil {
-		t.Error("couldn't find an AO obj")
-		t.FailNow()
+		return
 	}
 
 	objCtrl := ObjectController(*obj)
 
-	prop, err := objCtrl.GetProperty(server, types.PropertyPresentValue)
+	prop, err := objCtrl.GetProperty(s.Server, types.PropertyPresentValue)
+
+	s.NoError(err)
 
 	if err != nil {
-		t.Error(err)
-		t.FailNow()
+		return
 	}
 
 	propCtrl := PropertyController(*prop)
 
-	if err := propCtrl.SetValue(server, TagReal, 1); err != nil {
-		t.Error(err)
+	currentVal := prop.Values[0].ReadAsFloat64Unsafe()
+	newVal := currentVal + 0.5
+
+	if err := propCtrl.SetValue(s.Server, TagReal, newVal); err != nil {
+		s.NoError(err)
 	} else {
-		fmt.Println("Wrote prop to obj!")
-		prop, err = objCtrl.GetProperty(server, types.PropertyPresentValue)
+		prop, err = objCtrl.GetProperty(s.Server, types.PropertyPresentValue)
 
 		if err != nil {
-			t.Error(err)
-			t.FailNow()
+			s.NoError(err)
+			return
 		}
 
-		if prop.Values[0].Value != types.Real(1) {
-			t.Error("value didnt change")
-			t.FailNow()
-		}
-		fmt.Println("Read the same prop again")
+		updatedVal := prop.Values[0].ReadAsFloat64Unsafe()
+
+		s.NotEqual(currentVal, updatedVal)
+		s.Equal(newVal, updatedVal)
 	}
 }
 
-func TestReadAll(t *testing.T) {
-	for i, o := range objects {
+func (s *BacnetTestSuite) Test4ReadAll() {
+	for i, o := range s.Objects {
 		if i == 0 {
 			// skip device
 			continue
 		}
 
-		fmt.Printf("> processing %d out of %d\n", i, len(objects))
-
 		objCtrl := ObjectController(*o)
 
-		if p, err := objCtrl.GetProperty(server, types.PropertyObjectName); err != nil {
+		if p, err := objCtrl.GetProperty(s.Server, types.PropertyObjectName); err != nil {
 			fmt.Println(err)
 		} else {
 			fmt.Println("name is ", p.Values[0].ReadAsString())
 		}
 
-		if p, err := objCtrl.GetProperty(server, types.PropertyStateText); err == nil && p != nil {
+		if p, err := objCtrl.GetProperty(s.Server, types.PropertyStateText); err == nil && p != nil {
 			fmt.Println(p.Values[0].ReadAsString(), len(p.Values))
 		}
 
-		if _, err := objCtrl.GetProperty(server, types.PropertyPresentValue); err != nil {
+		if _, err := objCtrl.GetProperty(s.Server, types.PropertyPresentValue); err != nil {
 			fmt.Println(err)
 		}
 
-		if p, err := objCtrl.GetProperty(server, types.PropertyDescription); err != nil {
+		if p, err := objCtrl.GetProperty(s.Server, types.PropertyDescription); err != nil {
 			fmt.Println(err)
 		} else {
 			fmt.Printf("> Description is %s\n", p.Values[0].Value)
@@ -241,91 +183,90 @@ func TestReadAll(t *testing.T) {
 	}
 }
 
-func TestServer_SendCovRequest(t *testing.T) {
-	return
-
+func (s *BacnetTestSuite) Test5Server_SendCovRequest() {
 	var obj *types.Object
 
-	for _, o := range objects {
+	for _, o := range s.Objects {
 		if ObjectController(*o).ObjectId.Type == types.ObjectTypeAnalogValue {
 			obj = o
 			break
 		}
 	}
 
-	if obj == nil {
-		t.Error("couldn't find an MSV obj")
-		t.FailNow()
+	if !s.NotNil(obj) {
+		return
 	}
 
 	objCtrl := ObjectController(*obj)
 
-	prop, err := objCtrl.GetProperty(server, types.PropertyPresentValue)
+	prop, err := objCtrl.GetProperty(s.Server, types.PropertyPresentValue)
 
-	if err != nil {
-		t.Error(err)
-		t.FailNow()
+	if !s.NoError(err) {
+		return
 	}
 
 	propCtrl := PropertyController(*prop)
 
-	req, err := server.SubscribeCov(obj.IPAddress, obj.ObjectId.Type, obj.ObjectId.Instance, 2, false)
+	req, err := s.Server.SubscribeCov(obj.IPAddress, obj.ObjectId.Type, obj.ObjectId.Instance, 2, false)
 
-	if err != nil {
-		t.Error(err)
-		t.FailNow()
+	if !s.NoError(err) {
+		return
 	}
 
 	fmt.Println("sent cov req")
 
-	if err := propCtrl.SetValue(server, TagReal, 2); err != nil {
-		t.Error(err)
-	} else {
+	err = propCtrl.SetValue(s.Server, TagReal, 2)
 
-		fmt.Println("Value was set to 2")
+	if !s.NoError(err) {
+		return
+	}
 
-	Loop:
-		for {
-			select {
-			case <-time.After(time.Second * 3):
-				t.Error("didn't get notification within 3 seconds")
-				t.FailNow()
-			case n := <-req.Data():
-				if n.ObjectId.Type != objCtrl.ObjectId.Type || n.ObjectId.Instance != objCtrl.ObjectId.Instance {
-					continue
+	fmt.Println("Value was set to 2")
+
+	for {
+		select {
+		case <-time.After(time.Second * 3):
+			if !s.NoError(err) {
+				return
+			}
+		case n := <-req.Data():
+			if n.ObjectId.Type != objCtrl.ObjectId.Type || n.ObjectId.Instance != objCtrl.ObjectId.Instance {
+				continue
+			}
+
+			var prop *types.PropertyValue
+
+			for _, p := range n.Properties {
+				if p.Values != nil && len(p.Values) > 0 && p.Values[0].Type == types.TagReal {
+					prop = p.Values[0]
+					break
 				}
+			}
 
-				var prop *types.PropertyValue
+			if prop == nil {
+				continue
+			}
 
-				for _, p := range n.Properties {
-					if p.Values != nil && len(p.Values) > 0 && p.Values[0].Type == types.TagReal {
-						prop = p.Values[0]
-						break
-					}
-				}
+			fmt.Println("Got a property!", prop)
+			if !s.NotNil(prop.Value) {
+				return
+			}
 
-				if prop == nil {
-					continue
-				}
+			if !s.EqualValues(2, prop.Value.(types.Real)) {
+				return
+			}
 
-				fmt.Println("Got a property!", prop)
-				if prop.Value == nil {
-					t.Error("value is null")
-					t.FailNow()
-				}
+			fmt.Println("all good!")
+			return
 
-				if prop.Value.(types.Real) != 2 {
-					t.Errorf("expected value to be %d, got %f", 2, prop.Value.(types.Real))
-					t.FailNow()
-				}
-
-				fmt.Println("all good!")
-				break Loop
-
-			case err = <-req.Error():
-				t.Error(err)
-				t.FailNow()
+		case err = <-req.Error():
+			if !s.NoError(err) {
+				return
 			}
 		}
 	}
+}
+
+func TestBacnet(t *testing.T) {
+	suite.Run(t, new(BacnetTestSuite))
 }
