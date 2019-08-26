@@ -60,14 +60,14 @@ func ParseRequest(b []byte, sender *net.IP) (*Request, error) {
 	return req, req.UnmarshalBinary(b)
 }
 
-func (r *Request) SetConfirmedService(choice types.ConfirmedService, data encoding.BinaryMarshaler) {
+func (r *Request) SetConfirmedService(choice types.ConfirmedService, data encoding.BinaryMarshaler, address *net.IP) {
 	r.Apdu.ServiceChoice = choice
 	r.Apdu.PduType = types.PduTypeConfirmedServiceRequest
 	r.Apdu.RequestData = data
 	r.Header.Function = types.BvlcFunctionOriginalUnicastNpdu
 	r.Npci.IsConfirmed = true
 	r.Npci.ExpectingReply = true
-	r.Apdu.InvokeID = GetInvokeID()
+	r.Apdu.InvokeID = GetInvokeID(address)
 	r.tx = make(chan *Request)
 	//r.err = make(chan error)
 }
@@ -118,7 +118,7 @@ func (r *Request) Send(dest *net.IP, server *Server) error {
 	if data, err := r.MarshalBinary(); err != nil {
 		return err
 	} else {
-		server.SetConfirmedHandler(r.InvokeID(), r.tx)
+		server.SetConfirmedHandler(dest, r.InvokeID(), r.tx)
 
 		if err := server.Send(data, destUdp); err != nil {
 			return err

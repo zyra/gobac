@@ -16,6 +16,10 @@ func (s *Server) WriteProperty(deviceAddress *net.IP,
 	priority uint8,
 	value interface{}) error {
 
+	if deviceAddress == nil || deviceAddress.Equal(net.IP{0, 0, 0, 0}) {
+		return errors.New("received a nil or empty device IP")
+	}
+
 	req := NewRequest()
 	defer req.Release()
 
@@ -34,7 +38,7 @@ func (s *Server) WriteProperty(deviceAddress *net.IP,
 			ID: propertyId,
 		},
 		Priority: priority,
-	})
+	}, deviceAddress)
 
 	if err := req.Send(deviceAddress, s); err != nil {
 		return err

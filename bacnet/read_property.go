@@ -9,6 +9,10 @@ import (
 )
 
 func (s *Server) ReadProperty(address *net.IP, objectType, objectInstance types.Uint16, propertyId types.PropertyId) ([]*types.PropertyValue, error) {
+	if address == nil || address.Equal(net.IP{0, 0, 0, 0}) {
+		return nil, errors.New("received a nil or empty device IP")
+	}
+
 	req := NewRequest()
 	defer req.Release()
 
@@ -20,7 +24,7 @@ func (s *Server) ReadProperty(address *net.IP, objectType, objectInstance types.
 			},
 			ID: propertyId,
 		},
-	})
+	}, address)
 
 	if err := req.Send(address, s); err != nil {
 		return nil, err

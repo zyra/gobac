@@ -6,6 +6,7 @@ import (
 	"github.com/zyra/gobac/bacnet/types"
 	"log"
 	"net"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -33,10 +34,10 @@ type Server struct {
 	start chan struct{}
 
 	cHandlersMtx   *sync.RWMutex
-	cHandlers      *[255]chan<- *Request
+	cHandlers      map[string]chan<- *Request
 	ucHandlers     map[types.UnconfirmedService]chan<- *Request
 	ucHandlersMtx  *sync.RWMutex
-	covHandlers    *[255]chan<- *Request
+	covHandlers    map[string]chan<- *Request
 	covHandlersMtx *sync.RWMutex
 }
 
@@ -53,10 +54,10 @@ func NewServer(config *ServerConfig) (*Server, error) {
 		BroadcastPort:  config.ListenPort,
 		DefaultTimeout: config.DefaultTimeout,
 		cHandlersMtx:   new(sync.RWMutex),
-		cHandlers:      &[255]chan<- *Request{},
+		cHandlers:      make(map[string]chan<- *Request),
 		ucHandlers:     make(map[types.UnconfirmedService]chan<- *Request),
 		ucHandlersMtx:  new(sync.RWMutex),
-		covHandlers:    &[255]chan<- *Request{},
+		covHandlers:    make(map[string]chan<- *Request),
 		covHandlersMtx: new(sync.RWMutex),
 		networkSet:     ns,
 		close:          make(chan struct{}),
@@ -242,18 +243,17 @@ func (s *Server) handle(data []byte, n int, address *net.UDPAddr) {
 		//log.Printf("error decoding response: %s\n", err)
 		return
 	} else if req.InvokeID() > 0 {
-		ReleaseInvokeID(req.InvokeID())
+		ReleaseInvokeID(&address.IP, req.InvokeID())
 
 		if req.ServiceChoice() == ConfirmedServiceCovNotification && req.PduType() != PduTypeSimpleAck {
 			// This is a cov notification
 			if n, ok := req.Apdu.ResponseData.(*pdu.CovNotification); ok {
-				if h := s.getCovHandler(n.ProcessIdentifier); h != nil {
+				if h := s.getCovHandler(&address.IP, n.ProcessIdentifier); h != nil {
 					h <- req
 					return
 				} else {
 					// Probably an old subscription that's not valid anymore
 					// let's unsubscribe and stop this madness
-					println("cancelling a CoV", req.InvokeID(), n.ProcessIdentifier)
 					_, _ = s.SubscribeCov(&address.IP, n.ObjectId.Type, n.ObjectId.Instance, n.ProcessIdentifier, true)
 					return
 				}
@@ -263,7 +263,7 @@ func (s *Server) handle(data []byte, n int, address *net.UDPAddr) {
 			}
 		}
 
-		h := s.getConfirmedHandler(req.InvokeID())
+		h := s.getConfirmedHandler(&address.IP, req.InvokeID())
 
 		if h != nil {
 			h <- req
@@ -280,73 +280,72 @@ func (s *Server) handle(data []byte, n int, address *net.UDPAddr) {
 	}
 }
 
-func (s *Server) getConfirmedHandler(invokeId uint8) chan<- *Request {
-	if invokeId == 0 {
-		//fmt.Println("getConfirmedHandler got invokeId 0!")
+func (s *Server) getConfirmedHandler(deviceIP *net.IP, invokeId uint8) chan<- *Request {
+	if invokeId == 0 || deviceIP == nil {
 		return nil
 	}
 
-	if h := s.cHandlers[invokeId-1]; h != nil {
+	if h := s.cHandlers[deviceIP.String()+"."+strconv.Itoa(int(invokeId))]; h != nil {
 		return h
 	}
 	return nil
 }
 
-func (s *Server) SetConfirmedHandler(invokeId uint8, handler chan<- *Request) {
-	if invokeId == 0 {
-		//fmt.Println("SetConfirmedHandler got invokeId 0!")
+func (s *Server) SetConfirmedHandler(deviceIP *net.IP, invokeId uint8, handler chan<- *Request) {
+	if invokeId == 0 || deviceIP == nil {
 		return
 	}
 
 	s.cHandlersMtx.Lock()
 	defer s.cHandlersMtx.Unlock()
-	s.cHandlers[invokeId-1] = handler
+	s.cHandlers[deviceIP.String()+"."+strconv.Itoa(int(invokeId))] = handler
 }
 
-func (s *Server) RemoveConfirmedHandler(invokeId uint8) {
-	if invokeId == 0 {
-		//fmt.Println("RemoveConfirmedHandler got invokeId 0!")
+func (s *Server) RemoveConfirmedHandler(deviceIP *net.IP, invokeId uint8) {
+	if invokeId == 0 || deviceIP == nil {
 		return
 	}
 
 	s.cHandlersMtx.Lock()
 	defer s.cHandlersMtx.Unlock()
-	s.cHandlers[invokeId-1] = nil
+	s.cHandlers[deviceIP.String()+"."+strconv.Itoa(int(invokeId))] = nil
 }
 
-func (s *Server) getCovHandler(processId uint8) chan<- *Request {
-	if processId == 0 {
+func (s *Server) getCovHandler(deviceIP *net.IP, processId uint8) chan<- *Request {
+	if processId == 0 || deviceIP == nil {
 		//fmt.Println("getCovHandler got processId 0!")
 		return nil
 	}
 	s.covHandlersMtx.RLock()
 	defer s.covHandlersMtx.RUnlock()
-	if h := s.covHandlers[processId-1]; h != nil {
+
+	if h := s.covHandlers[deviceIP.String()+"."+strconv.Itoa(int(processId))]; h != nil {
 		return h
 	}
+
 	return nil
 }
 
-func (s *Server) SetCovHandler(processId uint8, handler chan<- *Request) {
-	if processId == 0 {
-		//fmt.Println("SetCovHandler got processId 0!")
+func (s *Server) SetCovHandler(deviceIP *net.IP, processId uint8, handler chan<- *Request) {
+	if processId == 0 || deviceIP == nil {
 		return
 	}
 
 	s.covHandlersMtx.Lock()
 	defer s.covHandlersMtx.Unlock()
-	s.covHandlers[processId-1] = handler
+
+	s.covHandlers[deviceIP.String()+"."+strconv.Itoa(int(processId))] = handler
 }
 
-func (s *Server) RemoveCovHandler(processId uint8) {
-	if processId == 0 {
-		//fmt.Println("RemoveCovHandler got processId 0!")
+func (s *Server) RemoveCovHandler(deviceIP *net.IP, processId uint8) {
+	if processId == 0 || deviceIP == nil {
 		return
 	}
 
 	s.covHandlersMtx.Lock()
 	defer s.covHandlersMtx.Unlock()
-	s.covHandlers[processId-1] = nil
+
+	s.covHandlers[deviceIP.String()+"."+strconv.Itoa(int(processId))] = nil
 }
 
 func (s *Server) getUnconfirmedHandler(service types.UnconfirmedService) chan<- *Request {
