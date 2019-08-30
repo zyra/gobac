@@ -3,8 +3,10 @@ node {
     checkout scm
   }
 
+  def img
+
   stage('Build Docker image') {
-    def img = docker.build('gobac')
+    img = docker.build('gobac')
   }
 
   stage('Push Docker image') {
