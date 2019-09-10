@@ -10,8 +10,8 @@ import (
 )
 
 func WritePropAction(ctx *cli.Context) (err error) {
-	if len(ctx.Args()) < 6 {
-		msg := fmt.Sprintf("Invalid number of arguments. Expected 6 and got %d.\n", len(ctx.Args()))
+	if len(ctx.Args()) < 5 {
+		msg := fmt.Sprintf("Invalid number of arguments. Expected 5-6 and got %d.\n", len(ctx.Args()))
 		return cli.NewExitError(msg, 1)
 	}
 
@@ -52,26 +52,25 @@ func WritePropAction(ctx *cli.Context) (err error) {
 	switch tag {
 	case types.TagBoolean:
 		parsedVal, err = strconv.ParseBool(val)
-		break
 
 	case types.TagUnsigned, types.TagEnumerated, types.TagSigned:
 		parsedVal, err = strconv.Atoi(val)
-		break
 
 	case types.TagReal:
 		parsedVal, err = strconv.ParseFloat(val, 32)
-		break
 
 	case types.TagDouble:
 		parsedVal, err = strconv.ParseFloat(val, 64)
-		break
 
 	case types.TagCharacterString:
 		parsedVal = types.CharacterString{
 			Value:    val,
 			Encoding: 0,
 		}
-		break
+
+	case types.TagNull:
+		parsedVal = nil
+
 	default:
 		return errors.New("unsupported data type (by the CLI)")
 	}
