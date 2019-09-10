@@ -8,8 +8,10 @@ import (
 
 var typeOfFloat = reflect.TypeOf(float64(0))
 var typeOfFloat32 = reflect.TypeOf(float32(0))
+
 //var typeOfInt = reflect.TypeOf(int64(0))
 var typeOfInt32 = reflect.TypeOf(int32(0))
+
 //var typeOfUnt = reflect.TypeOf(uint64(0))
 var typeOfUint32 = reflect.TypeOf(uint32(0))
 var typeOfString = reflect.TypeOf("")
@@ -104,7 +106,9 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 
 	switch p.Type {
 	case TagNull:
-		break
+		if _, err := buff.Write(tag.EncodeTag()); err != nil {
+			return nil, err
+		}
 
 	case TagBoolean:
 		if bVal, ok := p.Value.(bool); ok && bVal {
@@ -114,7 +118,6 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 		if _, err := buff.Write(tag.EncodeTag()); err != nil {
 			return nil, err
 		}
-		break
 
 	case TagUnsigned,
 		TagEnumerated:
@@ -126,7 +129,6 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 			p.Value = uint32(reflect.ValueOf(p.Value).Convert(typeOfUint32).Uint())
 		}
 
-
 		uintBytes := EncodeVarUint(p.Value.(uint32))
 
 		tag.LenValue = len(uintBytes)
@@ -136,7 +138,6 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 		} else if _, err := buff.Write(uintBytes); err != nil {
 			return nil, err
 		}
-		break
 
 	case TagSigned:
 		if _, ok := p.Value.(int32); !ok {
@@ -155,7 +156,6 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 		} else if _, err := buff.Write(uintBytes); err != nil {
 			return nil, err
 		}
-		break
 
 	case TagReal:
 		if _, ok := p.Value.(float32); !ok {
@@ -178,8 +178,6 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 			return nil, err
 		}
 
-		break
-
 	case TagDouble:
 		if _, ok := p.Value.(float64); !ok {
 			if !reflect.TypeOf(p.Value).ConvertibleTo(typeOfFloat) {
@@ -201,8 +199,6 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 			return nil, err
 		}
 
-		break
-
 	case TagOctetString:
 		if byteVal, ok := p.Value.([]byte); ok {
 			tag.LenValue = 4
@@ -214,7 +210,6 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 		} else {
 			return nil, invalidVal(p)
 		}
-		break
 
 	case TagCharacterString:
 		if csVal, ok := p.Value.(CharacterString); ok {
@@ -233,7 +228,6 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 		} else {
 			return nil, invalidVal(p)
 		}
-		break
 
 	case TagBitString:
 		if byteVal, ok := p.Value.(BitString); ok {
@@ -253,7 +247,6 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 		} else {
 			return nil, invalidVal(p)
 		}
-		break
 
 	case TagDate:
 		if dateVal, ok := p.Value.(*Date); ok {
@@ -272,7 +265,6 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 		} else {
 			return nil, invalidVal(p)
 		}
-		break
 
 	case TagTime:
 		if timeVal, ok := p.Value.(*Time); ok {
@@ -292,7 +284,6 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 		} else {
 			return nil, invalidVal(p)
 		}
-		break
 
 	case TagObjectId:
 		if objIdVal, ok := p.Value.(*ObjectId); ok {
@@ -311,8 +302,6 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 		} else {
 			return nil, invalidVal(p)
 		}
-		break
-
 	}
 
 	return buff.Bytes(), nil
