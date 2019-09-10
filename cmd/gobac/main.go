@@ -41,7 +41,7 @@ func main() {
 			Flags: []cli.Flag{
 				cli.UintFlag{
 					Name:  "priority",
-					Value: 8,
+					Value: 9,
 					Usage: "value priority",
 				},
 			},
