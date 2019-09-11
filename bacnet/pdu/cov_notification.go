@@ -2,6 +2,7 @@ package pdu
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"github.com/zyra/gobac/bacnet/types"
 )
@@ -16,6 +17,14 @@ type CovNotification struct {
 }
 
 func (n *CovNotification) UnmarshalBinary(b []byte) (err error) {
+	if b == nil {
+		return errors.New("received a nil byte slice")
+	}
+
+	if len(b) == 0 {
+		return errors.New("received an empty byte slice")
+	}
+
 	buff := buffPool.Get().(*bytes.Buffer)
 	buff.Write(b)
 	defer buff.Reset()
