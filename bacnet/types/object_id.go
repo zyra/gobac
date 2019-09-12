@@ -1,6 +1,9 @@
 package types
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 type ObjectId struct {
 	Type     ObjectType
@@ -19,6 +22,14 @@ func (o *ObjectId) MarshalBinary() ([]byte, error) {
 }
 
 func (o *ObjectId) UnmarshalBinary(b []byte) error {
+	if b == nil {
+		return errors.New("received a nil byte slice")
+	}
+
+	if len(b) == 0 {
+		return errors.New("received an empty byte slice")
+	}
+
 	v := Uint32(0)
 
 	if e := v.UnmarshalBinary(b); e != nil {

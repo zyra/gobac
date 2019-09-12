@@ -39,6 +39,14 @@ func (d *Device) Release() {
 }
 
 func (d *Device) UnmarshalBinary(data []byte) error {
+	if data == nil {
+		return errors.New("received a nil byte slice")
+	}
+
+	if len(data) == 0 {
+		return errors.New("received an empty byte slice")
+	}
+
 	buff := GetBuff(data...)
 	defer ReleaseBuff(buff)
 

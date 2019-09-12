@@ -1,6 +1,7 @@
 package types
 
 import (
+	"errors"
 	"fmt"
 )
 
@@ -30,6 +31,14 @@ func (h *Header) MarshalBinary() (b []byte, e error) {
 }
 
 func (h *Header) UnmarshalBinary(b []byte) error {
+	if b == nil {
+		return errors.New("received a nil byte slice")
+	}
+
+	if len(b) == 0 {
+		return errors.New("received an empty byte slice")
+	}
+
 	buff := GetBuff(b...)
 	defer ReleaseBuff(buff)
 

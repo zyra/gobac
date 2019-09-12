@@ -2,6 +2,7 @@ package types
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"reflect"
 )
@@ -308,6 +309,14 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 }
 
 func (p *PropertyValue) UnmarshalBinary(b []byte) (err error) {
+	if b == nil {
+		return errors.New("received a nil byte slice")
+	}
+
+	if len(b) == 0 {
+		return errors.New("received an empty byte slice")
+	}
+
 	var t *Tag
 	var r int
 

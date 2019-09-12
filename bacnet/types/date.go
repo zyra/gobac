@@ -1,6 +1,7 @@
 package types
 
 import (
+	"errors"
 	"fmt"
 	"time"
 )
@@ -22,6 +23,14 @@ func (d Date) MarshalBinary() ([]byte, error) {
 }
 
 func (d *Date) UnmarshalBinary(b []byte) error {
+	if b == nil {
+		return errors.New("received a nil byte slice")
+	}
+
+	if len(b) == 0 {
+		return errors.New("received an empty byte slice")
+	}
+
 	d.Year = uint16(b[0]) + 1900
 	d.Month = b[1]
 	d.Day = b[2]

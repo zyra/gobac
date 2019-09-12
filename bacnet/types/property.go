@@ -103,6 +103,14 @@ func (p *Property) MarshalBinary() (b []byte, err error) {
 }
 
 func (p *Property) UnmarshalBinary(b []byte) (err error) {
+	if b == nil {
+		return errors.New("received a nil byte slice")
+	}
+
+	if len(b) == 0 {
+		return errors.New("received an empty byte slice")
+	}
+
 	var tagStart uint8
 	var full bool
 	var buff *bytes.Buffer

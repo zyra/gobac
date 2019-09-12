@@ -1,5 +1,7 @@
 package types
 
+import "errors"
+
 const (
 	EncodingAnsiX34  CharacterStringEncoding = 0
 	EncodingUtf8                             = 0
@@ -27,6 +29,14 @@ func (cs *CharacterString) MarshalBinary() ([]byte, error) {
 }
 
 func (cs *CharacterString) UnmarshalBinary(b []byte) error {
+	if b == nil {
+		return errors.New("received a nil byte slice")
+	}
+
+	if len(b) == 0 {
+		return errors.New("received an empty byte slice")
+	}
+
 	cs.Encoding = b[0]
 	cs.Value = string(b[1:])
 	return nil

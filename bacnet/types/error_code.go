@@ -1,5 +1,7 @@
 package types
 
+import "errors"
+
 const (
 	ErrorCodeOther                              ErrorCode = 0
 	ErrorCodeDeviceBusy                                   = 3
@@ -150,6 +152,14 @@ func (c ErrorCode) MarshalBinary() ([]byte, error) {
 }
 
 func (c *ErrorCode) UnmarshalBinary(b []byte) error {
+	if b == nil {
+		return errors.New("received a nil byte slice")
+	}
+
+	if len(b) == 0 {
+		return errors.New("received an empty byte slice")
+	}
+
 	*c = ErrorCode(DecodeVarUint(b))
 	return nil
 }

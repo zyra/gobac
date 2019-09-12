@@ -1,6 +1,7 @@
 package types
 
 import (
+	"errors"
 	"math/bits"
 )
 
@@ -17,6 +18,14 @@ func (bs BitString) MarshalBinary() ([]byte, error) {
 }
 
 func (bs *BitString) UnmarshalBinary(b []byte) error {
+	if b == nil {
+		return errors.New("received a nil byte slice")
+	}
+
+	if len(b) == 0 {
+		return errors.New("received an empty byte slice")
+	}
+
 	out := make([]byte, len(b)-1)
 
 	// TODO handle bits used
