@@ -10,7 +10,7 @@ node {
   }
 
   stage('Push Docker image') {
-    docker.withRegistry('https://registry.zyra.ca') {
+    docker.withRegistry('https://harbor.zyra.ca', 'harbor') {
         if (env.BRANCH_NAME == 'master') {
           img.push('latest')
         }
