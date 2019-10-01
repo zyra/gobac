@@ -6,7 +6,7 @@ node {
   def img
 
   stage('Build Docker image') {
-    img = docker.build('gobac')
+    img = docker.build('zyra/gobac')
   }
 
   stage('Push Docker image') {
