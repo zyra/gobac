@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func (s *Server) WriteProperty(ctx context.Context, deviceAddress *net.IP, objectType, objectInstance types.Uint16, propertyId types.PropertyId, tag types.DataType, priority uint8, value interface{}) error {
+func (s *server) WriteProperty(ctx context.Context, deviceAddress *net.IP, objectType, objectInstance types.Uint16, propertyId types.PropertyId, tag types.DataType, priority uint8, value interface{}) error {
 
 	if deviceAddress == nil || deviceAddress.Equal(net.IP{0, 0, 0, 0}) {
 		return errors.New("received a nil or empty device IP")

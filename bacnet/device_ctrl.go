@@ -7,7 +7,7 @@ import (
 
 type DeviceController types.Device
 
-func (d DeviceController) GetObjects(server *Server) (dest []*types.Object, err error) {
+func (d DeviceController) GetObjects(server Server) (dest []*types.Object, err error) {
 	obj := ObjectController(d.Object)
 
 	prop, err := obj.GetProperty(server, types.PropertyObjectList)

@@ -98,13 +98,13 @@ func (r *Request) ServiceChoice() uint8 {
 	return r.Apdu.ServiceChoice
 }
 
-func (r *Request) Broadcast(server *Server, responseChoice types.UnconfirmedService) error {
+func (r *Request) Broadcast(server Server, responseChoice types.UnconfirmedService) error {
 	if data, err := r.MarshalBinary(); err != nil {
 		return err
 	} else {
 		server.SetUnconfirmedHandler(responseChoice, r.tx)
 
-		if err := server.Send(data, server.BroadcastAddr); err != nil {
+		if err := server.Send(data, server.GetBroadcastAddr()); err != nil {
 			return err
 		}
 	}
@@ -112,8 +112,8 @@ func (r *Request) Broadcast(server *Server, responseChoice types.UnconfirmedServ
 	return nil
 }
 
-func (r *Request) Send(dest *net.IP, server *Server) error {
-	destUdp := getUdpAddr(dest, server.BroadcastPort)
+func (r *Request) Send(dest *net.IP, server Server) error {
+	destUdp := getUdpAddr(dest, server.GetBroadcastPort())
 
 	if data, err := r.MarshalBinary(); err != nil {
 		return err

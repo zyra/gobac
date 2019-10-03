@@ -14,7 +14,7 @@ type ServerConfig struct {
 	// you must listen to the Error() chan to avoid deadlock
 	// Defaults to false.
 	ReceiveErrors bool
-	// Server BBMD port.
+	// server BBMD port.
 	// This is the port that we will identify ourselves with when making
 	// requests to a BACnet device.
 	// Defaults to 0xBAC0 (47808)

@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func (s *Server) WhoIs(ctx context.Context, timeout time.Duration) (<-chan *types.Device, error) {
+func (s *server) WhoIs(ctx context.Context, timeout time.Duration) (<-chan *types.Device, error) {
 	req := NewRequest()
 	defer req.Release()
 	req.SetUnconfirmedService(types.UnconfirmedServiceWhoIs, nil)

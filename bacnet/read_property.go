@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func (s *Server) ReadProperty(ctx context.Context, address *net.IP, objectType, objectInstance types.Uint16, propertyId types.PropertyId) ([]*types.PropertyValue, error) {
+func (s *server) ReadProperty(ctx context.Context, address *net.IP, objectType, objectInstance types.Uint16, propertyId types.PropertyId) ([]*types.PropertyValue, error) {
 	if address == nil || address.Equal(net.IP{0, 0, 0, 0}) {
 		return nil, errors.New("received a nil or empty device IP")
 	}

@@ -16,7 +16,7 @@ var ctx context.Context
 type BacnetTestSuite struct {
 	suite.Suite
 	Config *ServerConfig
-	Server *Server
+	Server Server
 
 	Devices []*types.Device
 	Device  *types.Device

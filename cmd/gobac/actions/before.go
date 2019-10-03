@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-var server *bacnet.Server
+var server bacnet.Server
 var verbose bool
 
 func logVerbose(vals ...interface{}) {
