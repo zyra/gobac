@@ -1,4 +1,4 @@
-FROM golang:alpine
+FROM golang:1.12-alpine
 
 WORKDIR /root/gobac
 COPY . .
