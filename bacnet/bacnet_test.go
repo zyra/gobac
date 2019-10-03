@@ -42,7 +42,10 @@ func (s *BacnetTestSuite) SetupSuite() {
 
 	go s.Server.Listen(ctx)
 
-	<-s.Server.Start()
+	select {
+	case <-s.Server.Start():
+	case <-ctx.Done():
+	}
 }
 
 func (s *BacnetTestSuite) TearDownSuite() {
@@ -52,7 +55,7 @@ func (s *BacnetTestSuite) TearDownSuite() {
 var count = 0
 
 func (s *BacnetTestSuite) Test1Scan() {
-	dChan, err := s.Server.WhoIs(time.Millisecond * 500)
+	dChan, err := s.Server.WhoIs(context.TODO(), time.Millisecond*500)
 
 	s.NoError(err)
 
@@ -135,7 +138,7 @@ func (s *BacnetTestSuite) Test3Write() {
 	currentVal := prop.Values[0].ReadAsFloat64Unsafe()
 	newVal := currentVal + 0.5
 
-	if err := propCtrl.SetValue(s.Server, TagReal, newVal); err != nil {
+	if err := propCtrl.SetValue(context.TODO(), s.Server, TagReal, newVal); err != nil {
 		s.NoError(err)
 	} else {
 		prop, err = objCtrl.GetProperty(s.Server, types.PropertyPresentValue)
@@ -207,7 +210,7 @@ func (s *BacnetTestSuite) Test5Server_SendCovRequest() {
 
 	propCtrl := PropertyController(*prop)
 
-	req, err := s.Server.SubscribeCov(obj.IPAddress, obj.ObjectId.Type, obj.ObjectId.Instance, 5, false)
+	req, err := s.Server.SubscribeCov(context.TODO(), obj.IPAddress, obj.ObjectId.Type, obj.ObjectId.Instance, 5, false)
 
 	if !s.NoError(err) {
 		return
@@ -215,7 +218,7 @@ func (s *BacnetTestSuite) Test5Server_SendCovRequest() {
 
 	defer func() {
 		println("unsubscribing")
-		_, err = s.Server.SubscribeCov(obj.IPAddress, obj.ObjectId.Type, obj.ObjectId.Instance, 5, true)
+		_, err = s.Server.SubscribeCov(context.TODO(), obj.IPAddress, obj.ObjectId.Type, obj.ObjectId.Instance, 5, true)
 
 		if !s.NoError(err) {
 			return
@@ -224,7 +227,7 @@ func (s *BacnetTestSuite) Test5Server_SendCovRequest() {
 
 	fmt.Println("sent cov req")
 
-	err = propCtrl.SetValue(s.Server, TagReal, 2)
+	err = propCtrl.SetValue(context.TODO(), s.Server, TagReal, 2)
 
 	if !s.NoError(err) {
 		return

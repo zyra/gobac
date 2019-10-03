@@ -1,6 +1,7 @@
 package bacnet
 
 import (
+	"context"
 	"errors"
 	"github.com/zyra/gobac/bacnet/pdu"
 	"github.com/zyra/gobac/bacnet/types"
@@ -8,13 +9,7 @@ import (
 	"time"
 )
 
-func (s *Server) WriteProperty(deviceAddress *net.IP,
-	objectType,
-	objectInstance types.Uint16,
-	propertyId types.PropertyId,
-	tag types.DataType,
-	priority uint8,
-	value interface{}) error {
+func (s *Server) WriteProperty(ctx context.Context, deviceAddress *net.IP, objectType, objectInstance types.Uint16, propertyId types.PropertyId, tag types.DataType, priority uint8, value interface{}) error {
 
 	if deviceAddress == nil || deviceAddress.Equal(net.IP{0, 0, 0, 0}) {
 		return errors.New("received a nil or empty device IP")
@@ -47,6 +42,9 @@ func (s *Server) WriteProperty(deviceAddress *net.IP,
 	tc := time.After(s.DefaultTimeout)
 
 	select {
+	case <-ctx.Done():
+		return errors.New("context finished")
+
 	case <-tc:
 		return errors.New("timeout")
 

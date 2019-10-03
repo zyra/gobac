@@ -1,6 +1,7 @@
 package bacnet
 
 import (
+	"context"
 	"errors"
 	"github.com/zyra/gobac/bacnet/pdu"
 	"github.com/zyra/gobac/bacnet/types"
@@ -25,11 +26,7 @@ func (n *CovNotifier) Error() <-chan error {
 	return n.err
 }
 
-func (s *Server) SubscribeCov(deviceIP *net.IP,
-	objectType types.ObjectType,
-	objectInstance types.Uint16,
-	processID uint8,
-	cancel bool) (*CovNotifier, error) {
+func (s *Server) SubscribeCov(ctx context.Context, deviceIP *net.IP, objectType types.ObjectType, objectInstance types.Uint16, processID uint8, cancel bool) (*CovNotifier, error) {
 	if deviceIP == nil || deviceIP.Equal(net.IP{0, 0, 0, 0}) {
 		return nil, errors.New("received a nil or empty device IP")
 	}
@@ -57,6 +54,9 @@ func (s *Server) SubscribeCov(deviceIP *net.IP,
 	// Let's listen to that first and figure out if this request was successful;
 	// and if it is, we can start listening for the next Acks and emit the covData.
 	select {
+	case <-ctx.Done():
+		return nil, errors.New("context ended")
+
 	case <-time.After(s.DefaultTimeout):
 		return nil, errors.New("timeout")
 
@@ -71,7 +71,7 @@ func (s *Server) SubscribeCov(deviceIP *net.IP,
 					deviceIP:       deviceIP,
 				}
 
-				go n.startListening(s)
+				go n.startListening(ctx, s)
 
 				return n, nil
 			}
@@ -89,25 +89,30 @@ func (s *Server) SubscribeCov(deviceIP *net.IP,
 	}
 }
 
-func (n *CovNotifier) startListening(server *Server) {
+func (n *CovNotifier) startListening(ctx context.Context, server *Server) {
 	defer server.RemoveCovHandler(n.deviceIP, n.subscriptionId)
 
 	for {
-		if data := <-n.handler; data.Successful() {
-			if val, ok := data.ResponseData().(*pdu.CovNotification); ok {
-				n.out <- val
-				n.sendAck(server, data)
+		select {
+		case data := <-n.handler:
+			if data.Successful() {
+				if val, ok := data.ResponseData().(*pdu.CovNotification); ok {
+					n.out <- val
+					n.sendAck(server, data)
+				} else {
+					n.err <- errors.New("error decoding response")
+				}
+			} else if data.Errored() {
+				n.err <- errors.New(data.ErrorMessage())
+			} else if data.Aborted() {
+				n.err <- errors.New(data.AbortReason())
+			} else if data.Rejected() {
+				n.err <- errors.New(data.RejectReason())
 			} else {
-				n.err <- errors.New("error decoding response")
+				n.err <- errors.New("internal error")
 			}
-		} else if data.Errored() {
-			n.err <- errors.New(data.ErrorMessage())
-		} else if data.Aborted() {
-			n.err <- errors.New(data.AbortReason())
-		} else if data.Rejected() {
-			n.err <- errors.New(data.RejectReason())
-		} else {
-			n.err <- errors.New("internal error")
+		case <-ctx.Done():
+			return
 		}
 	}
 }

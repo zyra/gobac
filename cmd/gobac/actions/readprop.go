@@ -1,6 +1,7 @@
 package actions
 
 import (
+	"context"
 	"fmt"
 	"github.com/urfave/cli"
 	"github.com/zyra/gobac/bacnet/types"
@@ -40,7 +41,7 @@ func ReadProp(ctx *cli.Context) (err error) {
 
 	logVerbosef("Reading property %d on object %d instance %d...\n", propertyId, objectType, objectInstance)
 
-	prop, err := server.ReadProperty(&address, objectType, objectInstance, propertyId)
+	prop, err := server.ReadProperty(context.TODO(), &address, objectType, objectInstance, propertyId)
 
 	if err != nil {
 		return err

@@ -1,6 +1,7 @@
 package actions
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -38,7 +39,7 @@ func whois(duration time.Duration) (devices []*types.Device, err error) {
 
 	devices = make([]*types.Device, 0)
 
-	dChan, err := server.WhoIs(duration)
+	dChan, err := server.WhoIs(context.TODO(), duration)
 
 	if err != nil {
 		return nil, err

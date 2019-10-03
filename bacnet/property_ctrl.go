@@ -1,6 +1,9 @@
 package bacnet
 
-import "github.com/zyra/gobac/bacnet/types"
+import (
+	"context"
+	"github.com/zyra/gobac/bacnet/types"
+)
 
 type PropertyController types.Property
 
@@ -9,11 +12,11 @@ func (p PropertyController) RawValue() *types.Property {
 	return &prop
 }
 
-func (p *PropertyController) GetValue(server *Server) error {
+func (p *PropertyController) GetValue(ctx context.Context, server *Server) error {
 	deviceAddress := p.IPAddress
 	objectType := p.ObjectId.Type
 	objectInstance := p.ObjectId.Instance
-	if prop, err := server.ReadProperty(deviceAddress, objectType, objectInstance, p.ID); err != nil {
+	if prop, err := server.ReadProperty(ctx, deviceAddress, objectType, objectInstance, p.ID); err != nil {
 		return err
 	} else {
 		p.Values = prop
@@ -21,9 +24,9 @@ func (p *PropertyController) GetValue(server *Server) error {
 	return nil
 }
 
-func (p *PropertyController) SetValue(server *Server, dataType DataTag, value interface{}) error {
+func (p *PropertyController) SetValue(ctx context.Context, server *Server, dataType DataTag, value interface{}) error {
 	deviceAddress := p.IPAddress
 	objectType := p.ObjectId.Type
 	objectInstance := p.ObjectId.Instance
-	return server.WriteProperty(deviceAddress, objectType, objectInstance, p.ID, dataType, 7, value)
+	return server.WriteProperty(ctx, deviceAddress, objectType, objectInstance, p.ID, dataType, 7, value)
 }

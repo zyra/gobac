@@ -1,12 +1,13 @@
 package bacnet
 
 import (
+	"context"
 	"github.com/zyra/gobac/bacnet/types"
 	"sync"
 	"time"
 )
 
-func (s *Server) WhoIs(timeout time.Duration) (<-chan *types.Device, error) {
+func (s *Server) WhoIs(ctx context.Context, timeout time.Duration) (<-chan *types.Device, error) {
 	req := NewRequest()
 	defer req.Release()
 	req.SetUnconfirmedService(types.UnconfirmedServiceWhoIs, nil)
@@ -30,17 +31,20 @@ func (s *Server) WhoIs(timeout time.Duration) (<-chan *types.Device, error) {
 	}
 
 	go func() {
-	Loop:
 		for {
 			select {
+			case <-ctx.Done():
+				close(dChan)
+				return
+
 			case <-time.After(timeout):
 				wg.Wait()
 				close(dChan)
-				break Loop
+				return
+
 			case data := <-req.Data():
 				wg.Add(1)
 				go handle(data)
-				continue
 			}
 		}
 	}()

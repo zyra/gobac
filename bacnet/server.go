@@ -254,7 +254,7 @@ func (s *Server) handle(data []byte, n int, address *net.UDPAddr) {
 				} else {
 					// Probably an old subscription that's not valid anymore
 					// let's unsubscribe and stop this madness
-					_, _ = s.SubscribeCov(&address.IP, n.ObjectId.Type, n.ObjectId.Instance, n.ProcessIdentifier, true)
+					_, _ = s.SubscribeCov(context.TODO(), &address.IP, n.ObjectId.Type, n.ObjectId.Instance, n.ProcessIdentifier, true)
 					return
 				}
 			} else {

@@ -1,6 +1,7 @@
 package bacnet
 
 import (
+	"context"
 	"errors"
 	"github.com/zyra/gobac/bacnet/pdu"
 	"github.com/zyra/gobac/bacnet/types"
@@ -8,7 +9,7 @@ import (
 	"time"
 )
 
-func (s *Server) ReadProperty(address *net.IP, objectType, objectInstance types.Uint16, propertyId types.PropertyId) ([]*types.PropertyValue, error) {
+func (s *Server) ReadProperty(ctx context.Context, address *net.IP, objectType, objectInstance types.Uint16, propertyId types.PropertyId) ([]*types.PropertyValue, error) {
 	if address == nil || address.Equal(net.IP{0, 0, 0, 0}) {
 		return nil, errors.New("received a nil or empty device IP")
 	}
@@ -33,6 +34,9 @@ func (s *Server) ReadProperty(address *net.IP, objectType, objectInstance types.
 	tc := time.After(s.DefaultTimeout)
 
 	select {
+	case <-ctx.Done():
+		return nil, errors.New("context finished")
+
 	case <-tc:
 		return nil, errors.New("timeout")
 

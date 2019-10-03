@@ -1,6 +1,7 @@
 package bacnet
 
 import (
+	context2 "context"
 	"github.com/zyra/gobac/bacnet/types"
 	"strings"
 )
@@ -15,7 +16,7 @@ func (o *ObjectController) GetProperty(server *Server, id types.PropertyId) (pro
 		IPAddress: o.IPAddress,
 	})
 
-	if err = p.GetValue(server); err != nil {
+	if err = p.GetValue(context2.TODO(), server); err != nil {
 		return prop, err
 	}
 
