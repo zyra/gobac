@@ -37,7 +37,7 @@ type Server interface {
 	RemoveCovHandler(deviceIP *net.IP, processId uint8)
 	SetUnconfirmedHandler(service types.UnconfirmedService, handler chan<- *Request)
 	RemoveUnconfirmedHandler(service types.UnconfirmedService)
-
+	SubscribeCov(ctx context.Context, deviceIP *net.IP, objectType types.ObjectType, objectInstance types.Uint16, processID uint8, cancel bool) (*CovNotifier, error)
 	GetBroadcastAddr() *net.UDPAddr
 	GetBroadcastPort() uint16
 }
