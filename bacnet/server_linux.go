@@ -4,10 +4,10 @@ package bacnet
 
 import (
 	"context"
-	"fmt"
 	"golang.org/x/sys/unix"
 	"log"
 	"net"
+	"os"
 	"syscall"
 )
 
@@ -19,26 +19,47 @@ func (s *server) Listen(ctx context.Context) {
 	s.ServerAddr = getUdpAddr(s.IPv4, s.ServerPort)
 	s.BroadcastAddr = getUdpAddr(s.BroadcastIPv4, s.BroadcastPort)
 
-	listenConfig := net.ListenConfig{Control: func(network, address string, c syscall.RawConn) error {
-		return c.Control(func(fd uintptr) {
-			if err := unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_REUSEADDR, 1); err != nil {
-				panic(err)
-			}
+	fd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_DGRAM, syscall.IPPROTO_UDP)
 
-			if err := unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_REUSEPORT, 1); err != nil {
-				panic(err)
-			}
-		})
-	}}
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	l, e := listenConfig.ListenPacket(ctx, "udp", fmt.Sprintf(":%d", s.BroadcastPort))
+	if err := unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_REUSEADDR, 1); err != nil {
+		log.Fatal(err)
+	}
+
+	if err := unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_BROADCAST, 1); err != nil {
+		log.Fatal(err)
+	}
+
+	addr := syscall.SockaddrInet4{
+		Port: int(s.BroadcastPort),
+		Addr: [4]byte{
+			(*s.IPv4)[0],
+			(*s.IPv4)[1],
+			(*s.IPv4)[2],
+			(*s.IPv4)[3],
+		},
+	}
+
+	if err := syscall.Bind(fd, &addr); err != nil {
+		_ = syscall.Close(fd)
+		log.Fatal(err)
+	}
+
+	socketFile := os.NewFile(uintptr(fd), "")
+
+	l, e := net.FilePacketConn(socketFile)
+
+	_ = socketFile.Close()
 
 	if e != nil {
-		panic(e)
+		log.Fatal(e)
 	}
 
 	if udpConn, ok := l.(*net.UDPConn); !ok {
-		panic("can't cast conn to udp conn")
+		log.Fatal("can't cast conn to udp conn")
 	} else {
 		s.BroadcastConn = udpConn
 		s.UnicastConn = udpConn
@@ -58,6 +79,7 @@ func (s *server) closeConn() {
 	if err := s.BroadcastConn.Close(); err != nil {
 		log.Printf("Error closing connection: %s\n", err)
 	}
+
 	s.close <- struct{}{}
 	s.start = make(chan struct{})
 }
