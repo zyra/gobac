@@ -35,12 +35,12 @@ func (s *server) Listen(ctx context.Context) {
 
 	addr := syscall.SockaddrInet4{
 		Port: int(s.BroadcastPort),
-		Addr: [4]byte{
-			(*s.IPv4)[0],
-			(*s.IPv4)[1],
-			(*s.IPv4)[2],
-			(*s.IPv4)[3],
-		},
+		//Addr: [4]byte{
+		//	(*s.IPv4)[0],
+		//	(*s.IPv4)[1],
+		//	(*s.IPv4)[2],
+		//	(*s.IPv4)[3],
+		//},
 	}
 
 	if err := syscall.Bind(fd, &addr); err != nil {
