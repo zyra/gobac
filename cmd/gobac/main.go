@@ -10,7 +10,7 @@ import (
 func main() {
 	app := cli.NewApp()
 	app.Name = "gobac cli"
-	app.Version = "1.5.0"
+	app.Version = "1.5.1"
 
 	app.Commands = []cli.Command{
 		{
