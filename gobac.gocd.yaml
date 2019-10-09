@@ -12,10 +12,15 @@ pipelines:
         auto_update: true
         branch: master
     stages:
+#    - test:
+#        fetch_materials: true
+#        keep_artifacts: false
+#        clean_workspace: true
+
     - build:
         fetch_materials: true
         keep_artifacts: false
-        clean_workspace: false
+        clean_workspace: true
         approval:
           type: success
           allow_only_on_success: false

@@ -11,7 +11,7 @@ import (
 
 var ifname = "docker0"
 var err error
-var ctx context.Context
+var ctx context.Context = context.Background()
 
 type BacnetTestSuite struct {
 	suite.Suite
@@ -37,8 +37,6 @@ func (s *BacnetTestSuite) SetupSuite() {
 	if err != nil {
 		return
 	}
-
-	s.Equal(s.Server.InterfaceName, ifname)
 
 	go s.Server.Listen(ctx)
 
