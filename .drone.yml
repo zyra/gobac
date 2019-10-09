@@ -115,3 +115,19 @@ steps:
       - go build -mod vendor -o gobac-darwin-amd64 cmd/gobac/main.go
 
 
+---
+kind: pipeline
+name: after
+clone:
+  disable: true
+
+steps:
+  - name: notify
+    image: plugins/slack
+    settings:
+      webhook:
+        from_secret: slack_webhook
+      channel: test-zone
+      username: drone
+    when:
+      status: [ success, failure ]
