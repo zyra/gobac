@@ -23,7 +23,7 @@ steps:
       DOCKER_TOKEN:
         from_secret: DOCKER_TOKEN
     commands:
-      - docker login -u $DOCKER_USERNAME -p $DOCKER_TOKEN
+      - docker login harbor.zyra.ca -u $DOCKER_USERNAME -p $DOCKER_TOKEN
       - docker push harbor.zyra.ca/zyra/gobac
 
 
