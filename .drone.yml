@@ -9,7 +9,23 @@ clone:
 steps:
   - name: build_docker_image
     commands:
-      - docker build -t zyra/gobac .
+      - docker build -t zyra/gobac -t harbor.zyra.ca/zyra/gobac .
+
+  - name: push_docker_image
+    depends_on:
+      - build_docker_image
+    when:
+      branch:
+        - master
+    environment:
+      DOCKER_USERNAME:
+        from_secret: DOCKER_USERNAME
+      DOCKER_TOKEN:
+        from_secret: DOCKER_TOKEN
+    commands:
+      - docker login -u $DOCKER_USERNAME -p $DOCKER_TOKEN
+      - docker push harbor.zyra.ca/zyra/gobac
+
 
 ---
 kind: pipeline
