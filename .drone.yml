@@ -10,51 +10,87 @@ steps:
   - name: build_docker_image
     commands:
       - docker build -t zyra/gobac .
-  - name: push_docker_image
-    depends_on:
-      - build_docker_image
-    commands:
-      - docker tag zyra/gobac:latest harbor.zyra.ca/zyra/gobac:latest
-      - docker push harbor.zyra.ca/zyra/gobac:latest
 
 ---
 kind: pipeline
 type: exec
-name: build-binaries
+name: build-binaries-linux-amd64
 
 clone:
   depth: 1
 
 steps:
   - name: linux-amd64
-    depends_on: []
     environment:
       GOOS: linux
       GOARCH: amd64
     commands:
       - go build -o gobac-linux-amd64 cmd/gobac/main.go
-      -
+
+
+---
+kind: pipeline
+type: exec
+name: build-binaries-linux-arm64
+
+clone:
+  depth: 1
+
+steps:
   - name: linux-arm64
     environment:
       GOOS: linux
       GOARCH: arm64
     commands:
       - go build -o gobac-linux-arm64 cmd/gobac/main.go
-      -
+
+
+
+---
+kind: pipeline
+type: exec
+name: build-binaries-linux-arm
+
+clone:
+  depth: 1
+
+steps:
   - name: linux-arm
     environment:
       GOOS: linux
       GOARCH: arm
     commands:
       - go build -o gobac-linux-arm cmd/gobac/main.go
-      -
+
+
+
+---
+kind: pipeline
+type: exec
+name: build-binaries-windows-amd64
+
+clone:
+  depth: 1
+
+steps:
   - name: windows-amd64
     environment:
       GOOS: windows
       GOARCH: amd64
     commands:
       - go build -o gobac-windows-amd64 cmd/gobac/main.go
-      -
+
+
+
+---
+kind: pipeline
+type: exec
+name: build-binaries-darwin-amd64
+
+clone:
+  depth: 1
+
+steps:
   - name: darwin-amd64
     environment:
       GOOS: darwin
