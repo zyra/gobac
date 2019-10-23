@@ -46,7 +46,7 @@ steps:
     image: drillster/drone-volume-cache
     volumes:
       - name: shared_cache
-        path: cache-dir
+        path: /cache-dir
       - name: gobac_binary_build_cache
         path: /cache
     settings:
@@ -129,7 +129,7 @@ steps:
       - darwin-amd64
     volumes:
       - name: shared_cache
-        path: cache-dir
+        path: /cache-dir
       - name: gobac_binary_build_cache
         path: /cache
     settings:
