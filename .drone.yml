@@ -28,107 +28,116 @@ steps:
 
 ---
 kind: pipeline
-type: exec
-name: build-binaries-linux-amd64
+type: docker
+name: build-binaries
 
 clone:
   depth: 1
 
+volumes:
+  - name: gobac_binary_build_cache
+    host:
+      path: /tmp/gobac_binary_build_cache
+  - name: shared_cache
+    temp: {}
+
 steps:
+  - name: restore-cache
+    image: drillster/drone-volume-cache
+    volumes:
+      - name: shared_cache
+        path: cache-dir
+      - name: gobac_binary_build_cache
+        path: /cache
+    settings:
+      restore: true
+      mount:
+        - cache-dir
+
   - name: linux-amd64
+    volumes:
+      - name: shared_cache
+        path: /root/.cache
+    depends_on:
+      - restore-cache
     environment:
       GOOS: linux
       GOARCH: amd64
     commands:
       -  go build -mod vendor -o gobac-linux-amd64 cmd/gobac/main.go
 
----
-kind: pipeline
-type: exec
-name: build-binaries-linux-arm64
-
-clone:
-  depth: 1
-
-steps:
   - name: linux-arm64
+    volumes:
+      - name: shared_cache
+        path: /root/.cache
+    depends_on:
+      - restore-cache
     environment:
       GOOS: linux
       GOARCH: arm64
     commands:
       -  go build -mod vendor -o gobac-linux-arm64 cmd/gobac/main.go
 
----
-kind: pipeline
-type: exec
-name: build-binaries-linux-arm
-
-clone:
-  depth: 1
-
-steps:
   - name: linux-arm
+    depends_on:
+      - restore-cache
+    volumes:
+      - name: shared_cache
+        path: /root/.cache
     environment:
       GOOS: linux
       GOARCH: arm
     commands:
       - go build -mod vendor -o gobac-linux-arm cmd/gobac/main.go
 
----
-kind: pipeline
-type: exec
-name: build-binaries-windows-amd64
-
-clone:
-  depth: 1
-
-steps:
   - name: windows-amd64
+    depends_on:
+      - restore-cache
+    volumes:
+      - name: shared_cache
+        path: /root/.cache
     environment:
       GOOS: windows
       GOARCH: amd64
     commands:
       - go build -mod vendor -o gobac-windows-amd64 cmd/gobac/main.go
 
----
-kind: pipeline
-type: exec
-name: build-binaries-darwin-amd64
-
-clone:
-  depth: 1
-
-steps:
   - name: darwin-amd64
+    depends_on:
+      - restore-cache
+    volumes:
+      - name: shared_cache
+        path: /root/.cache
     environment:
       GOOS: darwin
       GOARCH: amd64
     commands:
       - go build -mod vendor -o gobac-darwin-amd64 cmd/gobac/main.go
 
----
-kind: pipeline
-type: exec
-name: release
-clone:
-  disable: true
-depends_on:
-  - build-docker
-  - build-binaries-linux-amd64
-  - build-binaries-linux-arm64
-  - build-binaries-linux-arm
-  - build-binaries-windows-amd64
-  - build-binaries-darwin-amd64
-steps:
-  - name: test
-    commands:
-      - ls -al
+  - name: rebuild-cache
+    image: drillster/drone-volume-cache
+    depends_on:
+      - linux-amd64
+      - linux-arm64
+      - linux-arm
+      - windows-amd64
+      - darwin-amd64
+    volumes:
+      - name: shared_cache
+        path: cache-dir
+      - name: gobac_binary_build_cache
+        path: /cache
+    settings:
+      rebuild: true
+      mount:
+        - cache-dir
 
 ---
 kind: pipeline
 name: after
 depends_on:
-  - release
+  - build-docker
+  - build-binaries
 clone:
   disable: true
 steps:
