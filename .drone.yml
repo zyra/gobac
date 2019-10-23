@@ -55,6 +55,7 @@ steps:
         - cache-dir
 
   - name: linux-amd64
+    image: golang:1.12-alpine
     volumes:
       - name: shared_cache
         path: /root/.cache
@@ -67,6 +68,7 @@ steps:
       -  go build -mod vendor -o gobac-linux-amd64 cmd/gobac/main.go
 
   - name: linux-arm64
+    image: golang:1.12-alpine
     volumes:
       - name: shared_cache
         path: /root/.cache
@@ -79,6 +81,7 @@ steps:
       -  go build -mod vendor -o gobac-linux-arm64 cmd/gobac/main.go
 
   - name: linux-arm
+    image: golang:1.12-alpine
     depends_on:
       - restore-cache
     volumes:
@@ -91,6 +94,7 @@ steps:
       - go build -mod vendor -o gobac-linux-arm cmd/gobac/main.go
 
   - name: windows-amd64
+    image: golang:1.12-alpine
     depends_on:
       - restore-cache
     volumes:
@@ -103,6 +107,7 @@ steps:
       - go build -mod vendor -o gobac-windows-amd64 cmd/gobac/main.go
 
   - name: darwin-amd64
+    image: golang:1.12-alpine
     depends_on:
       - restore-cache
     volumes:
