@@ -108,7 +108,10 @@ steps:
 
 ---
 kind: pipeline
-name: after
+type: exec
+name: release
+clone:
+  disable: true
 depends_on:
   - build-docker
   - build-binaries-linux-amd64
@@ -116,9 +119,18 @@ depends_on:
   - build-binaries-linux-arm
   - build-binaries-windows-amd64
   - build-binaries-darwin-amd64
+steps:
+  - name: test
+    commands:
+      - ls -al
+
+---
+kind: pipeline
+name: after
+depends_on:
+  - release
 clone:
   disable: true
-
 steps:
   - name: notify
     image: plugins/slack
