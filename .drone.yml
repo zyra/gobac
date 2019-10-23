@@ -137,6 +137,24 @@ steps:
       mount:
         - cache-dir
 
+  - name: release
+    image: plugins/github-release
+    settings:
+      api_key:
+        from_secret: github_token
+      files:
+        - gobac-linux-amd64
+        - gobac-linux-arm64
+        - gobac-linux-arm
+        - gobac-windows-amd64
+        - gobac-darwin-amd64
+      checksum:
+        - md5
+        - sha1
+        - sha256
+        - sha512
+    when:
+      event: tag
 ---
 kind: pipeline
 name: after
