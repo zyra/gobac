@@ -26,7 +26,6 @@ steps:
       - docker login harbor.zyra.ca -u $DOCKER_USERNAME -p $DOCKER_TOKEN
       - docker push harbor.zyra.ca/zyra/gobac
 
-
 ---
 kind: pipeline
 type: exec
@@ -42,7 +41,6 @@ steps:
       GOARCH: amd64
     commands:
       -  go build -mod vendor -o gobac-linux-amd64 cmd/gobac/main.go
-
 
 ---
 kind: pipeline
@@ -60,8 +58,6 @@ steps:
     commands:
       -  go build -mod vendor -o gobac-linux-arm64 cmd/gobac/main.go
 
-
-
 ---
 kind: pipeline
 type: exec
@@ -77,8 +73,6 @@ steps:
       GOARCH: arm
     commands:
       - go build -mod vendor -o gobac-linux-arm cmd/gobac/main.go
-
-
 
 ---
 kind: pipeline
@@ -96,8 +90,6 @@ steps:
     commands:
       - go build -mod vendor -o gobac-windows-amd64 cmd/gobac/main.go
 
-
-
 ---
 kind: pipeline
 type: exec
@@ -114,10 +106,16 @@ steps:
     commands:
       - go build -mod vendor -o gobac-darwin-amd64 cmd/gobac/main.go
 
-
 ---
 kind: pipeline
 name: after
+depends_on:
+  - build-docker
+  - build-binaries-linux-amd64
+  - build-binaries-linux-arm64
+  - build-binaries-linux-arm
+  - build-binaries-windows-amd64
+  - build-binaries-darwin-amd64
 clone:
   disable: true
 
