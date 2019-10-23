@@ -150,6 +150,12 @@ steps:
         - cache-dir
 
   - name: release
+    depends_on:
+      - linux-amd64
+      - linux-arm64
+      - linux-arm
+      - windows-amd64
+      - darwin-amd64
     image: plugins/github-release
     volumes:
       - name: bin
