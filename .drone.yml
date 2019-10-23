@@ -141,7 +141,7 @@ steps:
     image: plugins/github-release
     settings:
       api_key:
-        from_secret: github_token
+        from_secret: github_secret
       files:
         - gobac-linux-amd64
         - gobac-linux-arm64
