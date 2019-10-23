@@ -40,6 +40,8 @@ volumes:
       path: /tmp/gobac_binary_build_cache
   - name: shared_cache
     temp: {}
+  - name: bin
+    temp: {}
 
 steps:
   - name: restore-cache
@@ -59,26 +61,30 @@ steps:
     volumes:
       - name: shared_cache
         path: /root/.cache
+      - name: bin
+        path: /root/bin
     depends_on:
       - restore-cache
     environment:
       GOOS: linux
       GOARCH: amd64
     commands:
-      -  go build -mod vendor -o gobac-linux-amd64 cmd/gobac/main.go
+      -  go build -mod vendor -o /root/bin/gobac-linux-amd64 cmd/gobac/main.go
 
   - name: linux-arm64
     image: golang:1.12-alpine
     volumes:
       - name: shared_cache
         path: /root/.cache
+      - name: bin
+        path: /root/bin
     depends_on:
       - restore-cache
     environment:
       GOOS: linux
       GOARCH: arm64
     commands:
-      -  go build -mod vendor -o gobac-linux-arm64 cmd/gobac/main.go
+      -  go build -mod vendor -o /root/bin/gobac-linux-arm64 cmd/gobac/main.go
 
   - name: linux-arm
     image: golang:1.12-alpine
@@ -87,37 +93,43 @@ steps:
     volumes:
       - name: shared_cache
         path: /root/.cache
+      - name: bin
+        path: /root/bin
     environment:
       GOOS: linux
       GOARCH: arm
     commands:
-      - go build -mod vendor -o gobac-linux-arm cmd/gobac/main.go
+      - go build -mod vendor -o /root/bin/gobac-linux-arm cmd/gobac/main.go
 
   - name: windows-amd64
     image: golang:1.12-alpine
     depends_on:
       - restore-cache
     volumes:
+      - name: bin
+        path: /root/bin
       - name: shared_cache
         path: /root/.cache
     environment:
       GOOS: windows
       GOARCH: amd64
     commands:
-      - go build -mod vendor -o gobac-windows-amd64 cmd/gobac/main.go
+      - go build -mod vendor -o /root/bin/gobac-windows-amd64 cmd/gobac/main.go
 
   - name: darwin-amd64
     image: golang:1.12-alpine
     depends_on:
       - restore-cache
     volumes:
+      - name: bin
+        path: /root/bin
       - name: shared_cache
         path: /root/.cache
     environment:
       GOOS: darwin
       GOARCH: amd64
     commands:
-      - go build -mod vendor -o gobac-darwin-amd64 cmd/gobac/main.go
+      - go build -mod vendor -o /root/bin/gobac-darwin-amd64 cmd/gobac/main.go
 
   - name: rebuild-cache
     image: drillster/drone-volume-cache
@@ -139,15 +151,14 @@ steps:
 
   - name: release
     image: plugins/github-release
+    volumes:
+      - name: bin
+        path: /tmp/bin
     settings:
       api_key:
         from_secret: github_secret
       files:
-        - gobac-linux-amd64
-        - gobac-linux-arm64
-        - gobac-linux-arm
-        - gobac-windows-amd64
-        - gobac-darwin-amd64
+        - /tmp/bin/*
       checksum:
         - md5
         - sha1
