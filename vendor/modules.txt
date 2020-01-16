@@ -3,9 +3,9 @@ github.com/davecgh/go-spew/spew
 # github.com/pmezard/go-difflib v1.0.0
 github.com/pmezard/go-difflib/difflib
 # github.com/stretchr/testify v1.4.0
-github.com/stretchr/testify/suite
 github.com/stretchr/testify/assert
 github.com/stretchr/testify/require
+github.com/stretchr/testify/suite
 # github.com/urfave/cli v1.21.0
 github.com/urfave/cli
 # golang.org/x/sys v0.0.0-20190405154228-4b34438f7a67
