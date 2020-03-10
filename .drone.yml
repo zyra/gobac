@@ -101,6 +101,66 @@ steps:
     commands:
       - go build -mod vendor -o /root/bin/gobac-linux-arm cmd/gobac/main.go
 
+  - name: linux-mips
+    image: golang:1.12-alpine
+    depends_on:
+      - restore-cache
+    volumes:
+      - name: shared_cache
+        path: /root/.cache
+      - name: bin
+        path: /root/bin
+    environment:
+      GOOS: linux
+      GOARCH: mips
+    commands:
+      - go build -mod vendor -o /root/bin/gobac-linux-mips cmd/gobac/main.go
+
+  - name: linux-mipsle
+    image: golang:1.12-alpine
+    depends_on:
+      - restore-cache
+    volumes:
+      - name: shared_cache
+        path: /root/.cache
+      - name: bin
+        path: /root/bin
+    environment:
+      GOOS: linux
+      GOARCH: mipsle
+    commands:
+      - go build -mod vendor -o /root/bin/gobac-linux-mipsle cmd/gobac/main.go
+
+  - name: linux-mips64
+    image: golang:1.12-alpine
+    depends_on:
+      - restore-cache
+    volumes:
+      - name: shared_cache
+        path: /root/.cache
+      - name: bin
+        path: /root/bin
+    environment:
+      GOOS: linux
+      GOARCH: mips64
+    commands:
+      - go build -mod vendor -o /root/bin/gobac-linux-mips64 cmd/gobac/main.go
+
+  - name: linux-mips64le
+    image: golang:1.12-alpine
+    depends_on:
+      - restore-cache
+    volumes:
+      - name: shared_cache
+        path: /root/.cache
+      - name: bin
+        path: /root/bin
+    environment:
+      GOOS: linux
+      GOARCH: mips64le
+    commands:
+      - go build -mod vendor -o /root/bin/gobac-linux-mips64le cmd/gobac/main.go
+
   - name: windows-amd64
     image: golang:1.12-alpine
     depends_on:
@@ -137,6 +197,10 @@ steps:
       - linux-amd64
       - linux-arm64
       - linux-arm
+      - linux-mips
+      - linux-mipsle
+      - linux-mips64
+      - linux-mips64le
       - windows-amd64
       - darwin-amd64
     volumes:
@@ -154,6 +218,10 @@ steps:
       - linux-amd64
       - linux-arm64
       - linux-arm
+      - linux-mips
+      - linux-mipsle
+      - linux-mips64
+      - linux-mips64le
       - windows-amd64
       - darwin-amd64
     image: plugins/github-release
@@ -190,3 +258,8 @@ steps:
       username: drone
     when:
       status: [ success, failure ]
+---
+kind: signature
+hmac: f1a2c0fec0c529dbd787d3a1258ec3affe3b1cc6afbbc3308fa46a9ec03a10bd
+
+...
