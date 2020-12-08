@@ -65,3 +65,7 @@ func (s *server) closeConn() {
 	s.close <- struct{}{}
 	s.start = make(chan struct{})
 }
+
+func (s *server) GetConnection() *net.UDPConn {
+	return s.BroadcastConn
+}

@@ -7,47 +7,74 @@ import (
 	"time"
 )
 
-func (s *server) WhoIs(ctx context.Context, timeout time.Duration) (<-chan *types.Device, error) {
+type WhoIsRequest struct {
+	*Request
+	devCh  chan *types.Device
+	doneCh chan struct{}
+	wg     *sync.WaitGroup
+}
+
+func (r *WhoIsRequest) Device() <-chan *types.Device {
+	return r.devCh
+}
+
+func (r *WhoIsRequest) Done() <-chan struct{} {
+	return r.doneCh
+}
+
+func (s *server) SendWhoIsBroadcast(ctx context.Context) (*WhoIsRequest, error) {
 	req := NewRequest()
-	defer req.Release()
 	req.SetUnconfirmedService(types.UnconfirmedServiceWhoIs, nil)
 
 	if err := req.Broadcast(s, types.UnconfirmedServiceIAm); err != nil {
 		return nil, err
 	}
 
-	dChan := make(chan *types.Device, 10)
-
-	wg := sync.WaitGroup{}
+	wiReq := WhoIsRequest{
+		Request: req,
+		devCh:   make(chan *types.Device, 10),
+		doneCh:  make(chan struct{}, 0),
+		wg:      new(sync.WaitGroup),
+	}
 
 	handle := func(data *Request) {
-		defer wg.Done()
+		defer wiReq.wg.Done()
 		defer data.Release()
 		if data.Successful() {
 			if val, ok := data.ResponseData().(*types.Device); ok {
-				dChan <- val
+				wiReq.devCh <- val
 			}
 		}
 	}
 
-	go func() {
+	go func(wiReq *WhoIsRequest) {
 		for {
 			select {
 			case <-ctx.Done():
-				close(dChan)
+				wiReq.wg.Wait()
+				close(wiReq.devCh)
+				close(wiReq.doneCh)
+				wiReq.Release()
 				return
 
-			case <-time.After(timeout):
-				wg.Wait()
-				close(dChan)
-				return
-
-			case data := <-req.Data():
-				wg.Add(1)
+			case data := <-wiReq.Data():
+				wiReq.wg.Add(1)
 				go handle(data)
 			}
 		}
-	}()
+	}(&wiReq)
 
-	return dChan, nil
+	return &wiReq, nil
+}
+
+func (s *server) WhoIs(ctx context.Context, timeout time.Duration) (<-chan *types.Device, error) {
+	bCtx, _ := context.WithTimeout(ctx, timeout)
+
+	req, err := s.SendWhoIsBroadcast(bCtx)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return req.Device(), nil
 }

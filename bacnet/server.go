@@ -31,6 +31,7 @@ type Server interface {
 	ReadProperty(ctx context.Context, address *net.IP, objectType, objectInstance types.Uint16, propertyId types.PropertyId) ([]*types.PropertyValue, error)
 	WriteProperty(ctx context.Context, deviceAddress *net.IP, objectType, objectInstance types.Uint16, propertyId types.PropertyId, tag types.DataType, priority uint8, value interface{}) error
 	WhoIs(ctx context.Context, timeout time.Duration) (<-chan *types.Device, error)
+	SendWhoIsBroadcast(ctx context.Context) (*WhoIsRequest, error)
 	SetConfirmedHandler(deviceIP *net.IP, invokeId uint8, handler chan<- *Request)
 	RemoveConfirmedHandler(deviceIP *net.IP, invokeId uint8)
 	SetCovHandler(deviceIP *net.IP, processId uint8, handler chan<- *Request)
@@ -40,6 +41,7 @@ type Server interface {
 	SubscribeCov(ctx context.Context, deviceIP *net.IP, objectType types.ObjectType, objectInstance types.Uint16, processID uint8, cancel bool) (*CovNotifier, error)
 	GetBroadcastAddr() *net.UDPAddr
 	GetBroadcastPort() uint16
+	GetConnection() *net.UDPConn
 }
 
 // The main server object.
