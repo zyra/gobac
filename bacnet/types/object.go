@@ -5,7 +5,7 @@ import (
 )
 
 type Object struct {
-	IPAddress    *net.IP
+	IPAddress    net.IP
 	ObjectId     *ObjectId
 	PresentValue *PropertyValue // TODO revise this
 	Name         string
@@ -15,7 +15,7 @@ type Object struct {
 }
 
 func (o *Object) Reset() {
-	o.IPAddress = nil
+	o.IPAddress = net.IPv4zero
 	o.ObjectId = nil
 	o.PresentValue = nil
 	o.Description = ""

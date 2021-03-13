@@ -15,7 +15,7 @@ type CovNotifier struct {
 	subscriptionId uint8
 	cancel         bool
 	handler        chan *Request
-	deviceIP       *net.IP
+	deviceIP       net.IP
 }
 
 func (n *CovNotifier) Data() <-chan *pdu.CovNotification {
@@ -26,7 +26,7 @@ func (n *CovNotifier) Error() <-chan error {
 	return n.err
 }
 
-func (s *server) SubscribeCov(ctx context.Context, deviceIP *net.IP, objectType types.ObjectType, objectInstance types.Uint16, processID uint8, cancel bool) (*CovNotifier, error) {
+func (s *Server) SubscribeCov(ctx context.Context, deviceIP net.IP, objectType types.ObjectType, objectInstance types.Uint16, processID uint8, cancel bool) (*CovNotifier, error) {
 	if deviceIP == nil || deviceIP.Equal(net.IP{0, 0, 0, 0}) {
 		return nil, errors.New("received a nil or empty device IP")
 	}
@@ -89,7 +89,7 @@ func (s *server) SubscribeCov(ctx context.Context, deviceIP *net.IP, objectType 
 	}
 }
 
-func (n *CovNotifier) startListening(ctx context.Context, server Server) {
+func (n *CovNotifier) startListening(ctx context.Context, server *Server) {
 	defer server.RemoveCovHandler(n.deviceIP, n.subscriptionId)
 
 	for {
@@ -117,7 +117,7 @@ func (n *CovNotifier) startListening(ctx context.Context, server Server) {
 	}
 }
 
-func (n *CovNotifier) sendAck(server Server, nReq *Request) {
+func (n *CovNotifier) sendAck(server *Server, nReq *Request) {
 	req := NewRequest()
 	defer req.Release()
 

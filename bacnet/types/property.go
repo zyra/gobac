@@ -8,7 +8,7 @@ import (
 )
 
 type Property struct {
-	IPAddress *net.IP
+	IPAddress net.IP
 	ObjectId  *ObjectId
 	ID        PropertyId
 	Index     uint32

@@ -22,7 +22,7 @@ func (r *WhoIsRequest) Done() <-chan struct{} {
 	return r.doneCh
 }
 
-func (s *server) SendWhoIsBroadcast(ctx context.Context) (*WhoIsRequest, error) {
+func (s *Server) SendWhoIsBroadcast(ctx context.Context) (*WhoIsRequest, error) {
 	req := NewRequest()
 	req.SetUnconfirmedService(types.UnconfirmedServiceWhoIs, nil)
 
@@ -67,7 +67,7 @@ func (s *server) SendWhoIsBroadcast(ctx context.Context) (*WhoIsRequest, error) 
 	return &wiReq, nil
 }
 
-func (s *server) WhoIs(ctx context.Context, timeout time.Duration) (<-chan *types.Device, error) {
+func (s *Server) WhoIs(ctx context.Context, timeout time.Duration) (<-chan *types.Device, error) {
 	bCtx, _ := context.WithTimeout(ctx, timeout)
 
 	req, err := s.SendWhoIsBroadcast(bCtx)

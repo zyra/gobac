@@ -9,7 +9,7 @@ import (
 	"net"
 )
 
-func (s *server) Listen(ctx context.Context) {
+func (s *Server) Listen(ctx context.Context) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -54,7 +54,7 @@ func (s *server) Listen(ctx context.Context) {
 	s.closeConn()
 }
 
-func (s *server) closeConn() {
+func (s *Server) closeConn() {
 	s.closing = true
 	if err := s.UnicastConn.Close(); err != nil {
 		log.Printf("Error closing connection: %s\n", err)
@@ -66,6 +66,6 @@ func (s *server) closeConn() {
 	s.start = make(chan struct{})
 }
 
-func (s *server) GetConnection() *net.UDPConn {
+func (s *Server) GetConnection() *net.UDPConn {
 	return s.BroadcastConn
 }

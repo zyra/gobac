@@ -10,43 +10,9 @@ import (
 	"time"
 )
 
-type Server interface {
-	Configure(config *ServerConfig) error
-
-	// Start listening with the provided context.
-	// This method will block until the context is marked as done.
-	//
-	// If you want to start listening and then do some other processing,
-	// you can start the server in a goroutine and then listen to the
-	// .Start() channel that will fire as soon as the server is up
-	// and the listeners are up.
-	//
-	// This method will panic if any of the listeners fail to start.
-	// This would typically happen if the address or port you are
-	// trying to bind to is already taken.
-	Listen(ctx context.Context)
-	Start() <-chan struct{}
-	Close() <-chan struct{}
-	Send(bytes []byte, dest *net.UDPAddr) error
-	ReadProperty(ctx context.Context, address *net.IP, objectType, objectInstance types.Uint16, propertyId types.PropertyId) ([]*types.PropertyValue, error)
-	WriteProperty(ctx context.Context, deviceAddress *net.IP, objectType, objectInstance types.Uint16, propertyId types.PropertyId, tag types.DataType, priority uint8, value interface{}) error
-	WhoIs(ctx context.Context, timeout time.Duration) (<-chan *types.Device, error)
-	SendWhoIsBroadcast(ctx context.Context) (*WhoIsRequest, error)
-	SetConfirmedHandler(deviceIP *net.IP, invokeId uint8, handler chan<- *Request)
-	RemoveConfirmedHandler(deviceIP *net.IP, invokeId uint8)
-	SetCovHandler(deviceIP *net.IP, processId uint8, handler chan<- *Request)
-	RemoveCovHandler(deviceIP *net.IP, processId uint8)
-	SetUnconfirmedHandler(service types.UnconfirmedService, handler chan<- *Request)
-	RemoveUnconfirmedHandler(service types.UnconfirmedService)
-	SubscribeCov(ctx context.Context, deviceIP *net.IP, objectType types.ObjectType, objectInstance types.Uint16, processID uint8, cancel bool) (*CovNotifier, error)
-	GetBroadcastAddr() *net.UDPAddr
-	GetBroadcastPort() uint16
-	GetConnection() *net.UDPConn
-}
-
 // The main server object.
 // This object will allow you to Send requests and receive broadcasts/responses.
-type server struct {
+type Server struct {
 	*networkSet
 	ServerAddr     *net.UDPAddr
 	ServerPort     uint16
@@ -82,8 +48,8 @@ var rxBuffPool = sync.Pool{
 }
 
 // Create a new server object with the provided configuration
-func NewServer(config *ServerConfig) (Server, error) {
-	s := &server{}
+func NewServer(config *ServerConfig) (*Server, error) {
+	s := &Server{}
 	if err := s.Configure(config); err != nil {
 		return nil, err
 	} else {
@@ -91,7 +57,7 @@ func NewServer(config *ServerConfig) (Server, error) {
 	}
 }
 
-func (s *server) Configure(config *ServerConfig) error {
+func (s *Server) Configure(config *ServerConfig) error {
 	ns, err := getNetworkSet(config.InterfaceName)
 
 	if err != nil {
@@ -124,23 +90,27 @@ func (s *server) Configure(config *ServerConfig) error {
 	return nil
 }
 
-func (s *server) Start() <-chan struct{} {
+func (s *Server) Start() <-chan struct{} {
 	return s.start
 }
 
-func (s *server) Close() <-chan struct{} {
+func (s *Server) Close() <-chan struct{} {
 	return s.close
 }
 
-func (s *server) GetBroadcastAddr() *net.UDPAddr {
+func (s *Server) Shutdown() {
+	s.closeConn()
+}
+
+func (s *Server) GetBroadcastAddr() *net.UDPAddr {
 	return s.BroadcastAddr
 }
 
-func (s *server) GetBroadcastPort() uint16 {
+func (s *Server) GetBroadcastPort() uint16 {
 	return s.BroadcastPort
 }
 
-func (s *server) receiveBroadcast(ctx context.Context) {
+func (s *Server) receiveBroadcast(ctx context.Context) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -156,7 +126,7 @@ func (s *server) receiveBroadcast(ctx context.Context) {
 	go s.receive(s.BroadcastConn, ctx)
 }
 
-func (s *server) receiveUnicast(ctx context.Context) {
+func (s *Server) receiveUnicast(ctx context.Context) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -164,7 +134,7 @@ func (s *server) receiveUnicast(ctx context.Context) {
 	go s.receive(s.UnicastConn, ctx)
 }
 
-func (s *server) receive(conn *net.UDPConn, ctx context.Context) {
+func (s *Server) receive(conn *net.UDPConn, ctx context.Context) {
 	var n int
 	var addr *net.UDPAddr
 	var err error
@@ -201,13 +171,13 @@ func (s *server) receive(conn *net.UDPConn, ctx context.Context) {
 }
 
 // Send covData to a UDP addr
-func (s *server) Send(bytes []byte, dest *net.UDPAddr) error {
+func (s *Server) Send(bytes []byte, dest *net.UDPAddr) error {
 	_, err := s.UnicastConn.WriteToUDP(bytes, dest)
 	return err
 }
 
 // Handle a response
-func (s *server) handle(data []byte, n int, address *net.UDPAddr) {
+func (s *Server) handle(data []byte, n int, address *net.UDPAddr) {
 	defer rxBuffPool.Put(data)
 
 	// Ignore any request that originated from our IP address
@@ -223,18 +193,18 @@ func (s *server) handle(data []byte, n int, address *net.UDPAddr) {
 		//log.Printf("error decoding response: %s\n", err)
 		return
 	} else if req.InvokeID() > 0 {
-		ReleaseInvokeID(&address.IP, req.InvokeID())
+		ReleaseInvokeID(address.IP, req.InvokeID())
 
 		if req.ServiceChoice() == ConfirmedServiceCovNotification && req.PduType() != PduTypeSimpleAck {
 			// This is a cov notification
 			if n, ok := req.Apdu.ResponseData.(*pdu.CovNotification); ok {
-				if h := s.getCovHandler(&address.IP, n.ProcessIdentifier); h != nil {
+				if h := s.getCovHandler(address.IP, n.ProcessIdentifier); h != nil {
 					h <- req
 					return
 				} else {
 					// Probably an old subscription that's not valid anymore
 					// let's unsubscribe and stop this madness
-					_, _ = s.SubscribeCov(context.TODO(), &address.IP, n.ObjectId.Type, n.ObjectId.Instance, n.ProcessIdentifier, true)
+					_, _ = s.SubscribeCov(context.TODO(), address.IP, n.ObjectId.Type, n.ObjectId.Instance, n.ProcessIdentifier, true)
 					return
 				}
 			} else {
@@ -243,7 +213,7 @@ func (s *server) handle(data []byte, n int, address *net.UDPAddr) {
 			}
 		}
 
-		h := s.getConfirmedHandler(&address.IP, req.InvokeID())
+		h := s.getConfirmedHandler(address.IP, req.InvokeID())
 
 		if h != nil {
 			h <- req
@@ -260,7 +230,7 @@ func (s *server) handle(data []byte, n int, address *net.UDPAddr) {
 	}
 }
 
-func (s *server) getConfirmedHandler(deviceIP *net.IP, invokeId uint8) chan<- *Request {
+func (s *Server) getConfirmedHandler(deviceIP net.IP, invokeId uint8) chan<- *Request {
 	if invokeId == 0 || deviceIP == nil {
 		return nil
 	}
@@ -274,7 +244,7 @@ func (s *server) getConfirmedHandler(deviceIP *net.IP, invokeId uint8) chan<- *R
 	return nil
 }
 
-func (s *server) SetConfirmedHandler(deviceIP *net.IP, invokeId uint8, handler chan<- *Request) {
+func (s *Server) SetConfirmedHandler(deviceIP net.IP, invokeId uint8, handler chan<- *Request) {
 	if invokeId == 0 || deviceIP == nil {
 		return
 	}
@@ -285,7 +255,7 @@ func (s *server) SetConfirmedHandler(deviceIP *net.IP, invokeId uint8, handler c
 	s.cHandlers[deviceIP.String()+"."+strconv.Itoa(int(invokeId))] = handler
 }
 
-func (s *server) RemoveConfirmedHandler(deviceIP *net.IP, invokeId uint8) {
+func (s *Server) RemoveConfirmedHandler(deviceIP net.IP, invokeId uint8) {
 	if invokeId == 0 || deviceIP == nil {
 		return
 	}
@@ -296,7 +266,7 @@ func (s *server) RemoveConfirmedHandler(deviceIP *net.IP, invokeId uint8) {
 	s.cHandlers[deviceIP.String()+"."+strconv.Itoa(int(invokeId))] = nil
 }
 
-func (s *server) getCovHandler(deviceIP *net.IP, processId uint8) chan<- *Request {
+func (s *Server) getCovHandler(deviceIP net.IP, processId uint8) chan<- *Request {
 	if processId == 0 || deviceIP == nil {
 		//fmt.Println("getCovHandler got processId 0!")
 		return nil
@@ -312,7 +282,7 @@ func (s *server) getCovHandler(deviceIP *net.IP, processId uint8) chan<- *Reques
 	return nil
 }
 
-func (s *server) SetCovHandler(deviceIP *net.IP, processId uint8, handler chan<- *Request) {
+func (s *Server) SetCovHandler(deviceIP net.IP, processId uint8, handler chan<- *Request) {
 	if processId == 0 || deviceIP == nil {
 		return
 	}
@@ -323,7 +293,7 @@ func (s *server) SetCovHandler(deviceIP *net.IP, processId uint8, handler chan<-
 	s.covHandlers[deviceIP.String()+"."+strconv.Itoa(int(processId))] = handler
 }
 
-func (s *server) RemoveCovHandler(deviceIP *net.IP, processId uint8) {
+func (s *Server) RemoveCovHandler(deviceIP net.IP, processId uint8) {
 	if processId == 0 || deviceIP == nil {
 		return
 	}
@@ -334,7 +304,7 @@ func (s *server) RemoveCovHandler(deviceIP *net.IP, processId uint8) {
 	s.covHandlers[deviceIP.String()+"."+strconv.Itoa(int(processId))] = nil
 }
 
-func (s *server) getUnconfirmedHandler(service types.UnconfirmedService) chan<- *Request {
+func (s *Server) getUnconfirmedHandler(service types.UnconfirmedService) chan<- *Request {
 	s.ucHandlersMtx.RLock()
 	defer s.ucHandlersMtx.RUnlock()
 	if h, exists := s.ucHandlers[service]; exists {
@@ -343,13 +313,13 @@ func (s *server) getUnconfirmedHandler(service types.UnconfirmedService) chan<- 
 	return nil
 }
 
-func (s *server) SetUnconfirmedHandler(service types.UnconfirmedService, handler chan<- *Request) {
+func (s *Server) SetUnconfirmedHandler(service types.UnconfirmedService, handler chan<- *Request) {
 	s.ucHandlersMtx.Lock()
 	defer s.ucHandlersMtx.Unlock()
 	s.ucHandlers[service] = handler
 }
 
-func (s *server) RemoveUnconfirmedHandler(service types.UnconfirmedService) {
+func (s *Server) RemoveUnconfirmedHandler(service types.UnconfirmedService) {
 	s.ucHandlersMtx.Lock()
 	defer s.ucHandlersMtx.Unlock()
 	if _, exists := s.ucHandlers[service]; exists {

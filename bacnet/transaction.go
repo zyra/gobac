@@ -16,7 +16,7 @@ func genTxId(addressStr string, num uint8) string {
 	}, ".")
 }
 
-func GetInvokeID(address *net.IP) uint8 {
+func GetInvokeID(address net.IP) uint8 {
 	var addressStr = address.String()
 	var invokeId uint8 = 0
 	var i uint8
@@ -40,7 +40,7 @@ func GetInvokeID(address *net.IP) uint8 {
 	return GetInvokeID(address)
 }
 
-func ReleaseInvokeID(address *net.IP, invokeId uint8) {
+func ReleaseInvokeID(address net.IP, invokeId uint8) {
 	if address == nil || invokeId == 0 {
 		return
 	}

@@ -35,7 +35,8 @@ type Apdu struct {
 	Rejected     bool
 	RejectReason types.RejectReason
 
-	SenderIP *net.IP
+	SenderIP net.IP
+	BacnetPort uint16
 }
 
 func (a *Apdu) Reset() {
@@ -57,6 +58,7 @@ func (a *Apdu) Reset() {
 	a.Aborted = false
 	a.Rejected = false
 	a.SenderIP = nil
+	a.BacnetPort = 0
 }
 
 func (a *Apdu) GetPduType() uint8 {
@@ -297,6 +299,7 @@ func (a *Apdu) decodeUnconfirmedApdu(buff *bytes.Buffer, err *error) {
 	case types.UnconfirmedServiceIAm:
 		res := types.NewDevice()
 		res.IPAddress = a.SenderIP
+		res.Port = a.BacnetPort
 		a.ResponseData = res
 		*err = res.UnmarshalBinary(buff.Bytes())
 		return

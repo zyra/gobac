@@ -19,6 +19,7 @@ type Device struct {
 	OriginInterface string
 	VendorID        Uint16
 	Segmentation    Segmentation
+	Port 			uint16
 }
 
 func NewDevice() *Device {
@@ -31,6 +32,7 @@ func (d *Device) Reset() {
 	d.MaxAPDU = 0
 	d.VendorID = 0
 	d.Segmentation = 0
+	d.Port = 0
 }
 
 func (d *Device) Release() {

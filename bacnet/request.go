@@ -60,7 +60,7 @@ func ParseRequest(b []byte, sender *net.UDPAddr) (*Request, error) {
 	return req, req.UnmarshalBinary(b)
 }
 
-func (r *Request) SetConfirmedService(choice types.ConfirmedService, data encoding.BinaryMarshaler, address *net.IP) {
+func (r *Request) SetConfirmedService(choice types.ConfirmedService, data encoding.BinaryMarshaler, address net.IP) {
 	r.Apdu.ServiceChoice = choice
 	r.Apdu.PduType = types.PduTypeConfirmedServiceRequest
 	r.Apdu.RequestData = data
@@ -98,7 +98,7 @@ func (r *Request) ServiceChoice() uint8 {
 	return r.Apdu.ServiceChoice
 }
 
-func (r *Request) Broadcast(server Server, responseChoice types.UnconfirmedService) error {
+func (r *Request) Broadcast(server *Server, responseChoice types.UnconfirmedService) error {
 	if data, err := r.MarshalBinary(); err != nil {
 		return err
 	} else {
@@ -112,7 +112,7 @@ func (r *Request) Broadcast(server Server, responseChoice types.UnconfirmedServi
 	return nil
 }
 
-func (r *Request) Send(dest *net.IP, server Server) error {
+func (r *Request) Send(dest net.IP, server *Server) error {
 	destUdp := getUdpAddr(dest, server.GetBroadcastPort())
 
 	if data, err := r.MarshalBinary(); err != nil {
@@ -226,7 +226,8 @@ func (r *Request) UnmarshalBinary(b []byte) error {
 	// mark bytes as read
 	buff.Next(r.Npci.Length)
 
-	r.Apdu.SenderIP = &r.Sender.IP
+	r.Apdu.SenderIP = r.Sender.IP
+	r.Apdu.BacnetPort = uint16(r.Sender.Port)
 
 	if err := r.Apdu.UnmarshalBinary(buff.Bytes()); err != nil {
 		return err

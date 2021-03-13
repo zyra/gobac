@@ -21,12 +21,12 @@ type Npci struct {
 	DestinationNet    types.Uint16
 	DestinationLength uint8
 	DestinationMAC    *net.HardwareAddr
-	DestinationIP     *net.IP
+	DestinationIP     net.IP
 
 	SourceNet    types.Uint16
 	SourceLength uint8
 	SourceMAC    *net.HardwareAddr
-	SourceIP     *net.IP
+	SourceIP     net.IP
 }
 
 func (n *Npci) Reset() {

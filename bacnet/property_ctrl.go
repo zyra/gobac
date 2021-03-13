@@ -12,7 +12,7 @@ func (p PropertyController) RawValue() *types.Property {
 	return &prop
 }
 
-func (p *PropertyController) GetValue(ctx context.Context, server Server) error {
+func (p *PropertyController) GetValue(ctx context.Context, server *Server) error {
 	deviceAddress := p.IPAddress
 	objectType := p.ObjectId.Type
 	objectInstance := p.ObjectId.Instance
@@ -24,7 +24,7 @@ func (p *PropertyController) GetValue(ctx context.Context, server Server) error 
 	return nil
 }
 
-func (p *PropertyController) SetValue(ctx context.Context, server Server, dataType DataTag, value interface{}) error {
+func (p *PropertyController) SetValue(ctx context.Context, server *Server, dataType DataTag, value interface{}) error {
 	deviceAddress := p.IPAddress
 	objectType := p.ObjectId.Type
 	objectInstance := p.ObjectId.Instance

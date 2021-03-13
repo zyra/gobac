@@ -8,7 +8,7 @@ import (
 
 type ObjectController types.Object
 
-func (o *ObjectController) GetProperty(server Server, id types.PropertyId) (prop *types.Property, err error) {
+func (o *ObjectController) GetProperty(server *Server, id types.PropertyId) (prop *types.Property, err error) {
 	p := PropertyController(types.Property{
 		ObjectId:  o.ObjectId,
 		ID:        id,
@@ -28,7 +28,7 @@ func (o ObjectController) RawValue() *types.Object {
 	return &obj
 }
 
-func (o *ObjectController) GetAllProperties(server Server) ([]*types.Property, error) {
+func (o *ObjectController) GetAllProperties(server *Server) ([]*types.Property, error) {
 	propIds := make([]types.PropertyId, 0)
 
 	propIdsProp, err := o.GetProperty(server, 371)
@@ -84,7 +84,7 @@ func (o *ObjectController) GetAllProperties(server Server) ([]*types.Property, e
 	return properties, nil
 }
 
-func (o *ObjectController) GetPresentValue(server Server) (*types.PropertyValue, error) {
+func (o *ObjectController) GetPresentValue(server *Server) (*types.PropertyValue, error) {
 	p, e := o.GetProperty(server, types.PropertyPresentValue)
 
 	if e != nil || p == nil || p.Values == nil || len(p.Values) == 0 {
