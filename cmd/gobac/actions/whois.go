@@ -5,10 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/urfave/cli"
-	"github.com/zyra/gobac/bacnet/types"
 	"sort"
 	"time"
+
+	"github.com/urfave/cli"
+	"github.com/zyra/gobac/bacnet/types"
 )
 
 func Whois(ctx *cli.Context) (err error) {

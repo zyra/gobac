@@ -4,11 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/urfave/cli"
-	"github.com/zyra/gobac/bacnet/types"
 	"net"
 	"strconv"
+
+	"github.com/urfave/cli"
+	"github.com/zyra/gobac/bacnet/types"
 )
+
+var writePropertyRequest = func(ctx context.Context, address net.IP, objectType, objectInstance types.Uint16, propertyID types.PropertyId, tag types.DataType, priority uint8, value interface{}) error {
+	return server.WriteProperty(ctx, address, objectType, objectInstance, propertyID, tag, priority, value)
+}
 
 func WritePropAction(ctx *cli.Context) (err error) {
 	if len(ctx.Args()) < 5 {
@@ -84,7 +89,7 @@ func WritePropAction(ctx *cli.Context) (err error) {
 
 	logVerbosef("Writing property %d on object %d instance %d...\n", propertyId, objectType, objectInstance)
 
-	if err := server.WriteProperty(context.TODO(), &address, objectType, objectInstance, propertyId, tag, priority, parsedVal); err != nil {
+	if err := writePropertyRequest(context.TODO(), address, objectType, objectInstance, propertyId, tag, priority, parsedVal); err != nil {
 		return err
 	} else {
 		fmt.Println("Write was successful!")

@@ -1,10 +1,11 @@
 package main
 
 import (
-	"github.com/urfave/cli"
-	"github.com/zyra/gobac/cmd/gobac/actions"
 	"log"
 	"os"
+
+	"github.com/urfave/cli"
+	"github.com/zyra/gobac/cmd/gobac/actions"
 )
 
 func main() {

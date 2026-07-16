@@ -3,11 +3,16 @@ package actions
 import (
 	"context"
 	"fmt"
-	"github.com/urfave/cli"
-	"github.com/zyra/gobac/bacnet/types"
 	"net"
 	"strconv"
+
+	"github.com/urfave/cli"
+	"github.com/zyra/gobac/bacnet/types"
 )
+
+var readPropertyRequest = func(ctx context.Context, address net.IP, objectType, objectInstance types.Uint16, propertyID types.PropertyId) ([]*types.PropertyValue, error) {
+	return server.ReadProperty(ctx, address, objectType, objectInstance, propertyID)
+}
 
 func ReadProp(ctx *cli.Context) (err error) {
 	if len(ctx.Args()) < 4 {
@@ -41,7 +46,7 @@ func ReadProp(ctx *cli.Context) (err error) {
 
 	logVerbosef("Reading property %d on object %d instance %d...\n", propertyId, objectType, objectInstance)
 
-	prop, err := server.ReadProperty(context.TODO(), &address, objectType, objectInstance, propertyId)
+	prop, err := readPropertyRequest(context.TODO(), address, objectType, objectInstance, propertyId)
 
 	if err != nil {
 		return err

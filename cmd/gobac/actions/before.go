@@ -3,12 +3,13 @@ package actions
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/urfave/cli"
 	"github.com/zyra/gobac/bacnet"
-	"time"
 )
 
-var server bacnet.Server
+var server *bacnet.Server
 var verbose bool
 
 func logVerbose(vals ...interface{}) {
