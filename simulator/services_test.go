@@ -134,3 +134,25 @@ func TestSubscribeCOVServiceCodec(t *testing.T) {
 		t.Fatalf("decoded cancellation = %+v, %v", cancel, err)
 	}
 }
+
+func TestSubscribeCOVAcceptsIndependentOptionalFields(t *testing.T) {
+	prefix := []byte{0x09, 7, 0x1c, 0x00, 0x00, 0x00, 0x21}
+	tests := []struct {
+		name      string
+		suffix    []byte
+		confirmed bool
+		lifetime  uint32
+	}{
+		{name: "confirmed only", suffix: []byte{0x29, 1}, confirmed: true},
+		{name: "lifetime only", suffix: []byte{0x39, 60}, lifetime: 60},
+	}
+	for _, test := range tests {
+		request, err := decodeSubscribeCOV(append(append([]byte(nil), prefix...), test.suffix...))
+		if err != nil {
+			t.Fatalf("%s: %v", test.name, err)
+		}
+		if request.Cancel || request.Confirmed != test.confirmed || request.Lifetime != test.lifetime {
+			t.Fatalf("%s decoded as %+v", test.name, request)
+		}
+	}
+}

@@ -276,17 +276,25 @@ func decodeSubscribeCOV(data []byte) (SubscribeCOVRequest, error) {
 		request.Cancel = true
 		return request, nil
 	}
-	confirmed, second, err := decodeContext(data[consumed:], 2)
-	if err != nil || len(confirmed) != 1 || (confirmed[0] != 0 && confirmed[0] != 1) {
-		return request, errors.New("invalid SubscribeCOV confirmed-notification flag")
+	if tag := (&types.Tag{}); tag.DecodeTag(data[consumed:]) > 0 && tag.IsContext(2) && !tag.Opening && !tag.Closing {
+		confirmed, second, err := decodeContext(data[consumed:], 2)
+		if err != nil || len(confirmed) != 1 || (confirmed[0] != 0 && confirmed[0] != 1) {
+			return request, errors.New("invalid SubscribeCOV confirmed-notification flag")
+		}
+		request.Confirmed = confirmed[0] != 0
+		consumed += second
 	}
-	request.Confirmed = confirmed[0] != 0
-	consumed += second
-	lifetime, second, err := decodeContextUnsigned(data[consumed:], 3)
-	if err != nil || consumed+second != len(data) {
-		return request, errors.New("invalid SubscribeCOV lifetime")
+	if consumed < len(data) {
+		lifetime, second, err := decodeContextUnsigned(data[consumed:], 3)
+		if err != nil {
+			return request, errors.New("invalid SubscribeCOV lifetime")
+		}
+		request.Lifetime = lifetime
+		consumed += second
 	}
-	request.Lifetime = lifetime
+	if consumed != len(data) {
+		return request, errors.New("unexpected trailing SubscribeCOV data")
+	}
 	return request, nil
 }
 
