@@ -1,0 +1,108 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v2.*"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.12.x
+
+      - name: Test
+        run: go test -mod=vendor ./...
+
+      - name: Vet
+        run: go vet -mod=vendor ./...
+
+  release:
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.26.5
+
+      - name: Build release assets
+        shell: bash
+        env:
+          CGO_ENABLED: 0
+        run: |
+          set -euo pipefail
+
+          rm -rf dist
+          mkdir -p dist
+          version="${GITHUB_REF_NAME#v}"
+
+          for target in linux/amd64 linux/arm64 windows/amd64 darwin/amd64 darwin/arm64; do
+            goos="${target%/*}"
+            goarch="${target#*/}"
+
+            for app in gobac gobac-sim; do
+              asset="${app}-${GITHUB_REF_NAME}-${goos}-${goarch}"
+              stage="$(mktemp -d)"
+              package="${stage}/${asset}"
+              binary="${app}"
+
+              if [[ "${goos}" == "windows" ]]; then
+                binary="${binary}.exe"
+              fi
+
+              mkdir -p "${package}"
+              GOOS="${goos}" GOARCH="${goarch}" go build \
+                -mod=vendor \
+                -trimpath \
+                -ldflags="-s -w -X main.version=${version}" \
+                -o "${package}/${binary}" \
+                "./cmd/${app}"
+
+              cp LICENSE README.md "${package}/"
+              if [[ "${app}" == "gobac-sim" ]]; then
+                mkdir -p "${package}/examples"
+                cp examples/simulator.yaml "${package}/examples/"
+              fi
+
+              if [[ "${goos}" == "windows" ]]; then
+                archive="${PWD}/dist/${asset}.zip"
+                (cd "${stage}" && python3 -m zipfile -c "${archive}" "${asset}")
+              else
+                tar -C "${stage}" -czf "dist/${asset}.tar.gz" "${asset}"
+              fi
+
+              rm -rf "${stage}"
+            done
+          done
+
+          (cd dist && sha256sum *.tar.gz *.zip > SHA256SUMS)
+
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" dist/* --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" dist/* \
+              --verify-tag \
+              --title "${GITHUB_REF_NAME}" \
+              --generate-notes
+          fi

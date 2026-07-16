@@ -3,7 +3,7 @@ package pdu
 import (
 	"errors"
 
-	"github.com/zyra/gobac/bacnet/types"
+	"github.com/zyra/gobac/v2/bacnet/types"
 )
 
 type WriteProperty struct {

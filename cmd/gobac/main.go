@@ -5,13 +5,22 @@ import (
 	"os"
 
 	"github.com/urfave/cli"
-	"github.com/zyra/gobac/cmd/gobac/actions"
+	"github.com/zyra/gobac/v2/cmd/gobac/actions"
 )
 
+var version = "dev"
+
 func main() {
+	app := newApp()
+	if err := app.Run(os.Args); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func newApp() *cli.App {
 	app := cli.NewApp()
 	app.Name = "gobac cli"
-	app.Version = "1.5.1"
+	app.Version = version
 
 	app.Commands = []cli.Command{
 		{
@@ -89,7 +98,5 @@ func main() {
 		},
 	}
 
-	if err := app.Run(os.Args); err != nil {
-		log.Fatal(err)
-	}
+	return app
 }

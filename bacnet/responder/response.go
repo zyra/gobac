@@ -1,8 +1,8 @@
 package responder
 
 import (
-	"github.com/zyra/gobac/bacnet/transport"
-	"github.com/zyra/gobac/bacnet/types"
+	"github.com/zyra/gobac/v2/bacnet/transport"
+	"github.com/zyra/gobac/v2/bacnet/types"
 )
 
 // Response describes one APDU to return from a Handler. Confirmed response

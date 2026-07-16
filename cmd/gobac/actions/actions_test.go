@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli"
-	"github.com/zyra/gobac/bacnet/types"
+	"github.com/zyra/gobac/v2/bacnet/types"
 )
 
 func actionContext(args ...string) *cli.Context {

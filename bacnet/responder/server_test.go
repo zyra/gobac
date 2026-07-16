@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zyra/gobac/bacnet"
-	"github.com/zyra/gobac/bacnet/transport"
-	"github.com/zyra/gobac/bacnet/types"
+	"github.com/zyra/gobac/v2/bacnet"
+	"github.com/zyra/gobac/v2/bacnet/transport"
+	"github.com/zyra/gobac/v2/bacnet/types"
 )
 
 const testService = uint8(99)

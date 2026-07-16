@@ -8,7 +8,7 @@ import (
 	"strconv"
 
 	"github.com/urfave/cli"
-	"github.com/zyra/gobac/bacnet/types"
+	"github.com/zyra/gobac/v2/bacnet/types"
 )
 
 var writePropertyRequest = func(ctx context.Context, address net.IP, objectType, objectInstance types.Uint16, propertyID types.PropertyId, tag types.DataType, priority uint8, value interface{}) error {

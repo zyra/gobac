@@ -12,23 +12,30 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/zyra/gobac/bacnet"
-	"github.com/zyra/gobac/bacnet/responder"
-	"github.com/zyra/gobac/bacnet/transport"
-	"github.com/zyra/gobac/bacnet/types"
-	"github.com/zyra/gobac/simulator"
+	"github.com/zyra/gobac/v2/bacnet"
+	"github.com/zyra/gobac/v2/bacnet/responder"
+	"github.com/zyra/gobac/v2/bacnet/transport"
+	"github.com/zyra/gobac/v2/bacnet/types"
+	"github.com/zyra/gobac/v2/simulator"
 )
 
 const usage = `Usage:
   gobac-sim run <scenario>
   gobac-sim validate <scenario>
-  gobac-sim inspect <scenario>`
+  gobac-sim inspect <scenario>
+  gobac-sim --version`
+
+var version = "dev"
 
 func main() {
 	os.Exit(runCLI(os.Args[1:], os.Stdout, os.Stderr))
 }
 
 func runCLI(args []string, stdout, stderr io.Writer) int {
+	if len(args) == 1 && args[0] == "--version" {
+		fmt.Fprintf(stdout, "gobac-sim %s\n", version)
+		return 0
+	}
 	if len(args) == 1 && (args[0] == "help" || args[0] == "--help" || args[0] == "-h") {
 		fmt.Fprintln(stdout, usage)
 		return 0

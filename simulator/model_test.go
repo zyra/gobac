@@ -3,7 +3,7 @@ package simulator
 import (
 	"testing"
 
-	"github.com/zyra/gobac/bacnet/types"
+	"github.com/zyra/gobac/v2/bacnet/types"
 )
 
 func TestCommandablePropertyPriorityResolution(t *testing.T) {

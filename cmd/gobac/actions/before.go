@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/urfave/cli"
-	"github.com/zyra/gobac/bacnet"
+	"github.com/zyra/gobac/v2/bacnet"
 )
 
 var server *bacnet.Server

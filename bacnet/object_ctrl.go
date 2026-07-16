@@ -2,7 +2,7 @@ package bacnet
 
 import (
 	context2 "context"
-	"github.com/zyra/gobac/bacnet/types"
+	"github.com/zyra/gobac/v2/bacnet/types"
 	"strings"
 )
 

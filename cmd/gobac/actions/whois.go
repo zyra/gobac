@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/urfave/cli"
-	"github.com/zyra/gobac/bacnet/types"
+	"github.com/zyra/gobac/v2/bacnet/types"
 )
 
 func Whois(ctx *cli.Context) (err error) {

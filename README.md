@@ -70,7 +70,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/zyra/gobac/bacnet"
+	"github.com/zyra/gobac/v2/bacnet"
 )
 
 func main() {

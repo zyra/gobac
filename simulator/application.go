@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zyra/gobac/bacnet/responder"
-	"github.com/zyra/gobac/bacnet/transport"
-	"github.com/zyra/gobac/bacnet/types"
+	"github.com/zyra/gobac/v2/bacnet/responder"
+	"github.com/zyra/gobac/v2/bacnet/transport"
+	"github.com/zyra/gobac/v2/bacnet/types"
 )
 
 // Application exposes one simulated device through BACnet services.

@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/zyra/gobac/bacnet"
-	"github.com/zyra/gobac/bacnet/transport"
-	"github.com/zyra/gobac/bacnet/types"
+	"github.com/zyra/gobac/v2/bacnet"
+	"github.com/zyra/gobac/v2/bacnet/transport"
+	"github.com/zyra/gobac/v2/bacnet/types"
 )
 
 // Handler processes a decoded BACnet request. Returning no responses is valid;

@@ -10,11 +10,26 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zyra/gobac/bacnet"
-	"github.com/zyra/gobac/bacnet/transport"
-	"github.com/zyra/gobac/bacnet/types"
-	"github.com/zyra/gobac/simulator"
+	"github.com/zyra/gobac/v2/bacnet"
+	"github.com/zyra/gobac/v2/bacnet/transport"
+	"github.com/zyra/gobac/v2/bacnet/types"
+	"github.com/zyra/gobac/v2/simulator"
 )
+
+func TestRunCLIVersion(t *testing.T) {
+	original := version
+	version = "2.0.0-test"
+	defer func() { version = original }()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if code := runCLI([]string{"--version"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("runCLI() = %d, stderr = %q", code, stderr.String())
+	}
+	if got, want := stdout.String(), "gobac-sim 2.0.0-test\n"; got != want {
+		t.Fatalf("stdout = %q, want %q", got, want)
+	}
+}
 
 func writeScenario(t *testing.T, contents string) string {
 	t.Helper()

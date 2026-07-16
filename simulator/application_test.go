@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zyra/gobac/bacnet"
-	"github.com/zyra/gobac/bacnet/pdu"
-	"github.com/zyra/gobac/bacnet/responder"
-	"github.com/zyra/gobac/bacnet/transport"
-	"github.com/zyra/gobac/bacnet/types"
+	"github.com/zyra/gobac/v2/bacnet"
+	"github.com/zyra/gobac/v2/bacnet/pdu"
+	"github.com/zyra/gobac/v2/bacnet/responder"
+	"github.com/zyra/gobac/v2/bacnet/transport"
+	"github.com/zyra/gobac/v2/bacnet/types"
 )
 
 func TestApplicationServicesOverMemoryNetwork(t *testing.T) {

@@ -1,4 +1,4 @@
-module github.com/zyra/gobac
+module github.com/zyra/gobac/v2
 
 go 1.12
 

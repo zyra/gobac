@@ -3,8 +3,8 @@ package bacnet
 import (
 	"context"
 	"errors"
-	"github.com/zyra/gobac/bacnet/pdu"
-	"github.com/zyra/gobac/bacnet/types"
+	"github.com/zyra/gobac/v2/bacnet/pdu"
+	"github.com/zyra/gobac/v2/bacnet/types"
 	"net"
 	"time"
 )

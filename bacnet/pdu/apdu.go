@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/zyra/gobac/bacnet/types"
+	"github.com/zyra/gobac/v2/bacnet/types"
 )
 
 type Apdu struct {
