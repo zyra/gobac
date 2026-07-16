@@ -201,6 +201,147 @@ func TestApplicationWritePropertyPriorityErrors(t *testing.T) {
 	}
 }
 
+func TestReadPropertyPriorityArrayOverWire(t *testing.T) {
+	objectID := ObjectID{Type: uint16(types.ObjectTypeAnalogValue), Instance: 1}
+	defaultValue := Value{Tag: types.TagReal, Value: float32(20.5)}
+	device := &Device{
+		ID:       70001,
+		Name:     "Test Device",
+		VendorID: 260,
+		Objects: map[ObjectID]*Object{
+			objectID: {
+				ID:   objectID,
+				Name: "Setpoint",
+				Properties: map[uint32]*Property{
+					uint32(types.PropertyPresentValue): {
+						ID:                uint32(types.PropertyPresentValue),
+						Writable:          true,
+						Scalar:            true,
+						ExpectedTag:       types.TagReal,
+						RelinquishDefault: &defaultValue,
+					},
+				},
+			},
+		},
+	}
+	if err := device.WriteProperty(objectID, uint32(types.PropertyPresentValue), []Value{{Tag: types.TagReal, Value: float32(21)}}, 8); err != nil {
+		t.Fatal(err)
+	}
+
+	application := NewApplication(device, RealClock{})
+	bacnetObjectID, err := toBACnetObjectID(objectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	requestPayload, err := (&types.Property{ObjectId: bacnetObjectID, ID: types.PropertyPriorityArray}).MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	request := bacnet.NewRequest()
+	defer request.Release()
+	request.Apdu.Payload = requestPayload
+	responses, err := application.handleReadProperty(context.Background(), &responder.Request{Packet: request})
+	if err != nil || len(responses) != 1 || responses[0].PDUType != types.PduTypeComplexAck {
+		t.Fatalf("full-array responses = %+v, %v", responses, err)
+	}
+
+	result := &types.Property{}
+	if err := result.UnmarshalBinary(responses[0].Payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Values) != PrioritySlots {
+		t.Fatalf("values = %d, want %d", len(result.Values), PrioritySlots)
+	}
+	for i, value := range result.Values {
+		if i == 7 { // priority 8 (1-indexed) is slice index 7.
+			if value.Type != types.TagReal || value.ReadAsFloat64() != 21 {
+				t.Fatalf("slot 8 = %+v, want 21", value)
+			}
+			continue
+		}
+		if value.Type != types.TagNull {
+			t.Fatalf("slot %d = %+v, want NULL", i+1, value)
+		}
+	}
+
+	indexedPayload, err := (&types.Property{ObjectId: bacnetObjectID, ID: types.PropertyPriorityArray, HasIndex: true, Index: 16}).MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Apdu.Payload = indexedPayload
+	responses, err = application.handleReadProperty(context.Background(), &responder.Request{Packet: request})
+	if err != nil || len(responses) != 1 || responses[0].PDUType != types.PduTypeComplexAck {
+		t.Fatalf("indexed responses = %+v, %v", responses, err)
+	}
+	indexed := &types.Property{}
+	if err := indexed.UnmarshalBinary(responses[0].Payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(indexed.Values) != 1 || indexed.Values[0].Type != types.TagNull {
+		t.Fatalf("indexed value (unset slot 16) = %+v, want single NULL", indexed.Values)
+	}
+}
+
+func TestExpandPropertyReferencesIncludesPriorityArrayForCommandableObjects(t *testing.T) {
+	commandableObjectID := ObjectID{Type: uint16(types.ObjectTypeAnalogOutput), Instance: 1}
+	defaultValue := Value{Tag: types.TagReal, Value: float32(0)}
+	commandableDevice := &Device{
+		ID: 1,
+		Objects: map[ObjectID]*Object{
+			commandableObjectID: {
+				ID: commandableObjectID,
+				Properties: map[uint32]*Property{
+					uint32(types.PropertyPresentValue): {
+						ID:                uint32(types.PropertyPresentValue),
+						RelinquishDefault: &defaultValue,
+						Values:            []Value{{Tag: types.TagReal, Value: float32(0)}},
+					},
+					uint32(types.PropertyObjectName): {
+						ID:     uint32(types.PropertyObjectName),
+						Values: []Value{{Tag: types.TagCharacterString, Value: "command"}},
+					},
+				},
+			},
+		},
+	}
+	spec := ReadAccessSpecification{Object: commandableObjectID, Properties: []PropertyReference{{ID: uint32(types.PropertyAll)}}}
+	references := expandPropertyReferences(commandableDevice, spec)
+	found := false
+	for _, reference := range references {
+		if reference.ID == uint32(types.PropertyPriorityArray) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expanded references = %+v, want PropertyPriorityArray included", references)
+	}
+
+	nonCommandableObjectID := ObjectID{Type: uint16(types.ObjectTypeAnalogInput), Instance: 2}
+	nonCommandableDevice := &Device{
+		ID: 2,
+		Objects: map[ObjectID]*Object{
+			nonCommandableObjectID: {
+				ID: nonCommandableObjectID,
+				Properties: map[uint32]*Property{
+					uint32(types.PropertyPresentValue): {
+						ID:     uint32(types.PropertyPresentValue),
+						Values: []Value{{Tag: types.TagReal, Value: float32(10)}},
+					},
+				},
+			},
+		},
+	}
+	nonCommandableSpec := ReadAccessSpecification{Object: nonCommandableObjectID, Properties: []PropertyReference{{ID: uint32(types.PropertyAll)}}}
+	nonCommandableReferences := expandPropertyReferences(nonCommandableDevice, nonCommandableSpec)
+	for _, reference := range nonCommandableReferences {
+		if reference.ID == uint32(types.PropertyPriorityArray) {
+			t.Fatalf("non-commandable expansion incorrectly included PropertyPriorityArray: %+v", nonCommandableReferences)
+		}
+	}
+}
+
 func TestApplicationPrunesExpiredSubscriberEndpoints(t *testing.T) {
 	clock := NewManualClock(time.Unix(1000, 0))
 	application := NewApplication(applicationTestDevice(), clock)

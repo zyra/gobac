@@ -298,6 +298,9 @@ func expandPropertyReferences(device *Device, specification ReadAccessSpecificat
 	for id := range object.Properties {
 		ids = append(ids, int(id))
 	}
+	if pv := object.Properties[uint32(types.PropertyPresentValue)]; pv != nil && pv.RelinquishDefault != nil {
+		ids = append(ids, int(types.PropertyPriorityArray))
+	}
 	sort.Ints(ids)
 	result := make([]PropertyReference, 0, len(ids))
 	for _, id := range ids {

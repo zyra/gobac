@@ -133,3 +133,132 @@ func TestDevicePropertyErrors(t *testing.T) {
 		t.Fatalf("got %v, want ErrUnknownObject", err)
 	}
 }
+
+func TestCommandablePriorityArrayReads(t *testing.T) {
+	scenario := &Scenario{
+		Version: ScenarioVersion,
+		Network: NetworkConfig{Mode: "single-device", Port: 47808},
+		Devices: []DeviceSpec{{
+			ID: 1, Name: "device", Objects: []ObjectSpec{
+				{
+					Type: "analog-output", Instance: 1, Name: "command",
+					PresentValue: float64(35), Writable: true, Commandable: true,
+					RelinquishDefault: float64(0),
+				},
+				{
+					Type: "analog-input", Instance: 2, Name: "sensor",
+					PresentValue: float64(10),
+				},
+			},
+		}},
+	}
+	network, err := scenario.BuildNetwork()
+	if err != nil {
+		t.Fatal(err)
+	}
+	device, err := network.Device(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commandable := ObjectID{Type: uint16(types.ObjectTypeAnalogOutput), Instance: 1}
+	nonCommandable := ObjectID{Type: uint16(types.ObjectTypeAnalogInput), Instance: 2}
+
+	values, err := device.ReadProperty(commandable, uint32(types.PropertyPriorityArray), nil)
+	if err != nil {
+		t.Fatalf("read priority array: %v", err)
+	}
+	if len(values) != PrioritySlots {
+		t.Fatalf("priority array length = %d, want %d", len(values), PrioritySlots)
+	}
+	for i := 0; i < PrioritySlots-1; i++ {
+		if values[i].Tag != types.TagNull || values[i].Value != nil {
+			t.Fatalf("slot %d = %+v, want NULL", i+1, values[i])
+		}
+	}
+	if values[PrioritySlots-1].Tag != types.TagReal || values[PrioritySlots-1].Value != float32(35) {
+		t.Fatalf("slot 16 = %+v, want relinquish-priority value 35", values[PrioritySlots-1])
+	}
+
+	if err := device.WriteProperty(commandable, uint32(types.PropertyPresentValue), []Value{{Tag: types.TagReal, Value: float32(21)}}, 8); err != nil {
+		t.Fatal(err)
+	}
+
+	index := uint32(8)
+	values, err = device.ReadProperty(commandable, uint32(types.PropertyPriorityArray), &index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(values) != 1 || values[0].Tag != types.TagReal || values[0].Value != float32(21) {
+		t.Fatalf("slot 8 (index 8) = %+v, want 21", values)
+	}
+
+	index = 16
+	values, err = device.ReadProperty(commandable, uint32(types.PropertyPriorityArray), &index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(values) != 1 || values[0].Value != float32(35) {
+		t.Fatalf("slot 16 (index 16) = %+v, want 35", values)
+	}
+
+	index = 3
+	values, err = device.ReadProperty(commandable, uint32(types.PropertyPriorityArray), &index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(values) != 1 || values[0].Tag != types.TagNull {
+		t.Fatalf("slot 3 (index 3) = %+v, want NULL", values)
+	}
+
+	index = 0
+	values, err = device.ReadProperty(commandable, uint32(types.PropertyPriorityArray), &index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(values) != 1 || values[0].Tag != 2 || values[0].Value != uint32(16) {
+		t.Fatalf("array length (index 0) = %+v, want 16", values)
+	}
+
+	index = 17
+	if _, err := device.ReadProperty(commandable, uint32(types.PropertyPriorityArray), &index); err != ErrInvalidArrayIndex {
+		t.Fatalf("index 17 error = %v, want ErrInvalidArrayIndex", err)
+	}
+
+	// Relinquish priority 8 and confirm the array reflects live state, not a
+	// stale snapshot.
+	if err := device.WriteProperty(commandable, uint32(types.PropertyPresentValue), []Value{{Tag: types.TagNull}}, 8); err != nil {
+		t.Fatal(err)
+	}
+	index = 8
+	values, err = device.ReadProperty(commandable, uint32(types.PropertyPriorityArray), &index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(values) != 1 || values[0].Tag != types.TagNull {
+		t.Fatalf("slot 8 after relinquish = %+v, want NULL", values)
+	}
+
+	// Mutation-safety: mutating a returned value must not affect stored state.
+	values, err = device.ReadProperty(commandable, uint32(types.PropertyPriorityArray), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	values[PrioritySlots-1].Value = float32(999)
+	again, err := device.ReadProperty(commandable, uint32(types.PropertyPriorityArray), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again[PrioritySlots-1].Value != float32(35) {
+		t.Fatalf("mutation leaked into stored state: %+v", again[PrioritySlots-1])
+	}
+
+	// Negative: a non-commandable object has no Priority_Array.
+	if _, err := device.ReadProperty(nonCommandable, uint32(types.PropertyPriorityArray), nil); err != ErrUnknownProperty {
+		t.Fatalf("non-commandable priority array error = %v, want ErrUnknownProperty", err)
+	}
+
+	// Write denial: Priority_Array is read-only.
+	if err := device.WriteProperty(commandable, uint32(types.PropertyPriorityArray), []Value{{Tag: types.TagReal, Value: float32(1)}}, 0); err != ErrWriteDenied {
+		t.Fatalf("write to priority array error = %v, want ErrWriteDenied", err)
+	}
+}

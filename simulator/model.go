@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+
+	"github.com/zyra/gobac/v2/bacnet/types"
 )
 
 const (
@@ -147,6 +149,21 @@ func (p *Property) PriorityArray() [PrioritySlots]*Value {
 	return result
 }
 
+// priorityArrayProperty exposes the live command priorities as the BACnet
+// Priority_Array property: a 16-slot array whose unset slots are NULL.
+func (p *Property) priorityArrayProperty() *Property {
+	slots := p.PriorityArray()
+	values := make([]Value, PrioritySlots)
+	for i, slot := range slots {
+		if slot == nil {
+			values[i] = Value{Tag: types.TagNull}
+		} else {
+			values[i] = *slot
+		}
+	}
+	return &Property{ID: uint32(types.PropertyPriorityArray), Array: true, Values: values}
+}
+
 func (p *Property) effectiveValues() []Value {
 	if p.RelinquishDefault == nil {
 		return p.Values
@@ -195,6 +212,11 @@ func (d *Device) ReadProperty(id ObjectID, propertyID uint32, arrayIndex *uint32
 	}
 	property := object.Properties[propertyID]
 	if property == nil {
+		if propertyID == uint32(types.PropertyPriorityArray) {
+			if pv := object.Properties[uint32(types.PropertyPresentValue)]; pv != nil && pv.RelinquishDefault != nil {
+				return pv.priorityArrayProperty().Read(arrayIndex)
+			}
+		}
 		return nil, ErrUnknownProperty
 	}
 	return property.Read(arrayIndex)
@@ -209,6 +231,11 @@ func (d *Device) WriteProperty(id ObjectID, propertyID uint32, values []Value, p
 	}
 	property := object.Properties[propertyID]
 	if property == nil {
+		if propertyID == uint32(types.PropertyPriorityArray) {
+			if pv := object.Properties[uint32(types.PropertyPresentValue)]; pv != nil && pv.RelinquishDefault != nil {
+				return ErrWriteDenied
+			}
+		}
 		return ErrUnknownProperty
 	}
 	return property.Write(values, priority)
