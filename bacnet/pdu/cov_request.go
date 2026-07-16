@@ -8,10 +8,11 @@ import (
 )
 
 type SubscribeCov struct {
-	ProcessIdentifier uint32
-	ObjectId          *types.ObjectId
-	Cancel            bool
-	Timeout           uint32
+	ProcessIdentifier   uint8
+	ProcessIdentifier32 uint32
+	ObjectId            *types.ObjectId
+	Cancel              bool
+	Timeout             uint32
 }
 
 func (p *SubscribeCov) MarshalBinary() ([]byte, error) {
@@ -26,7 +27,11 @@ func (p *SubscribeCov) MarshalBinary() ([]byte, error) {
 
 	// Write process id tag & value
 	t.TagNumber = 0
-	processIdentifier := types.EncodeVarUint(p.ProcessIdentifier)
+	processID := p.ProcessIdentifier32
+	if processID == 0 {
+		processID = uint32(p.ProcessIdentifier)
+	}
+	processIdentifier := types.EncodeVarUint(processID)
 	t.LenValue = len(processIdentifier)
 
 	if _, err := buff.Write(t.EncodeContextTag()); err != nil {

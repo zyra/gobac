@@ -13,9 +13,9 @@ func TestSubscribeCovUsesCompactUnsignedLengths(t *testing.T) {
 		t.Fatal(err)
 	}
 	request := SubscribeCov{
-		ProcessIdentifier: 0x01020304,
-		ObjectId:          objectID,
-		Timeout:           60,
+		ProcessIdentifier32: 0x01020304,
+		ObjectId:            objectID,
+		Timeout:             60,
 	}
 	encoded, err := request.MarshalBinary()
 	if err != nil {
@@ -57,8 +57,8 @@ func TestCovNotificationAcceptsUnsigned32ProcessIdentifier(t *testing.T) {
 	if err := notification.UnmarshalBinary(wire); err != nil {
 		t.Fatal(err)
 	}
-	if notification.ProcessIdentifier != ^uint32(0) {
-		t.Fatalf("process identifier = %d", notification.ProcessIdentifier)
+	if notification.ProcessIdentifier32 != ^uint32(0) {
+		t.Fatalf("process identifier = %d", notification.ProcessIdentifier32)
 	}
 }
 

@@ -160,7 +160,7 @@ func TestCovHandlersPreserveUnsigned32ProcessIdentifier(t *testing.T) {
 	server := newLifecycleTestServer()
 	address := net.IPv4(192, 0, 2, 31)
 	server.SetCovHandler(address, 1, make(chan *Request, 1))
-	server.SetCovHandler(address, 65537, make(chan *Request, 1))
+	server.SetCovHandlerWithProcessID(address, 65537, make(chan *Request, 1))
 
 	if server.getCovHandler(address, 1) == nil {
 		t.Fatal("low process identifier handler is missing")
@@ -401,8 +401,8 @@ func TestSubscribeCovCancellationPayload(t *testing.T) {
 	if !cancelPayload.Cancel {
 		t.Fatal("cancellation flag was not copied to SubscribeCOV payload")
 	}
-	if cancelPayload.ProcessIdentifier != processID {
-		t.Fatalf("process identifier truncated: got %#x", cancelPayload.ProcessIdentifier)
+	if cancelPayload.ProcessIdentifier32 != processID {
+		t.Fatalf("process identifier truncated: got %#x", cancelPayload.ProcessIdentifier32)
 	}
 	cancelBytes, err := cancelPayload.MarshalBinary()
 	if err != nil {

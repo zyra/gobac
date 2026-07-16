@@ -231,7 +231,7 @@ func (s *Server) handle(data []byte, n int, address *net.UDPAddr) {
 		if req.ServiceChoice() == ConfirmedServiceCovNotification && req.PduType() != PduTypeSimpleAck {
 			// This is a cov notification
 			if n, ok := req.Apdu.ResponseData.(*pdu.CovNotification); ok {
-				if found, delivered := s.deliverCovHandler(address.IP, n.ProcessIdentifier, req); found {
+				if found, delivered := s.deliverCovHandler(address.IP, n.ProcessIdentifier32, req); found {
 					if !delivered {
 						req.Release()
 					}
@@ -364,7 +364,13 @@ func (s *Server) getCovHandler(deviceIP net.IP, processId uint32) chan<- *Reques
 	return nil
 }
 
-func (s *Server) SetCovHandler(deviceIP net.IP, processId uint32, handler chan<- *Request) {
+func (s *Server) SetCovHandler(deviceIP net.IP, processId uint8, handler chan<- *Request) {
+	s.SetCovHandlerWithProcessID(deviceIP, uint32(processId), handler)
+}
+
+// SetCovHandlerWithProcessID registers a COV handler using the complete
+// BACnet Unsigned32 subscriber process identifier.
+func (s *Server) SetCovHandlerWithProcessID(deviceIP net.IP, processId uint32, handler chan<- *Request) {
 	if processId == 0 || deviceIP == nil {
 		return
 	}
@@ -375,7 +381,13 @@ func (s *Server) SetCovHandler(deviceIP net.IP, processId uint32, handler chan<-
 	s.covHandlers[covHandlerKey(deviceIP, processId)] = handler
 }
 
-func (s *Server) RemoveCovHandler(deviceIP net.IP, processId uint32) {
+func (s *Server) RemoveCovHandler(deviceIP net.IP, processId uint8) {
+	s.RemoveCovHandlerWithProcessID(deviceIP, uint32(processId))
+}
+
+// RemoveCovHandlerWithProcessID removes a COV handler registered with a full
+// BACnet Unsigned32 subscriber process identifier.
+func (s *Server) RemoveCovHandlerWithProcessID(deviceIP net.IP, processId uint32) {
 	if processId == 0 || deviceIP == nil {
 		return
 	}

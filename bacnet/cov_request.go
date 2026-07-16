@@ -26,7 +26,13 @@ func (n *CovNotifier) Error() <-chan error {
 	return n.err
 }
 
-func (s *Server) SubscribeCov(ctx context.Context, deviceIP net.IP, objectType types.ObjectType, objectInstance types.Uint16, processID uint32, cancel bool) (*CovNotifier, error) {
+func (s *Server) SubscribeCov(ctx context.Context, deviceIP net.IP, objectType types.ObjectType, objectInstance types.Uint16, processID uint8, cancel bool) (*CovNotifier, error) {
+	return s.SubscribeCovWithProcessID(ctx, deviceIP, objectType, objectInstance, uint32(processID), cancel)
+}
+
+// SubscribeCovWithProcessID subscribes using the complete BACnet Unsigned32
+// subscriber process identifier.
+func (s *Server) SubscribeCovWithProcessID(ctx context.Context, deviceIP net.IP, objectType types.ObjectType, objectInstance types.Uint16, processID uint32, cancel bool) (*CovNotifier, error) {
 	if deviceIP == nil || deviceIP.Equal(net.IP{0, 0, 0, 0}) {
 		return nil, errors.New("received a nil or empty device IP")
 	}
@@ -39,11 +45,11 @@ func (s *Server) SubscribeCov(ctx context.Context, deviceIP net.IP, objectType t
 
 	handler := make(chan *Request, 128)
 
-	s.SetCovHandler(deviceIP, processID, handler)
+	s.SetCovHandlerWithProcessID(deviceIP, processID, handler)
 	handlerOwned := false
 	defer func() {
 		if !handlerOwned {
-			s.RemoveCovHandler(deviceIP, processID)
+			s.RemoveCovHandlerWithProcessID(deviceIP, processID)
 		}
 	}()
 
@@ -104,14 +110,15 @@ func newSubscribeCovPayload(objectType types.ObjectType, objectInstance types.Ui
 			Instance: objectInstance,
 			Type:     objectType,
 		},
-		ProcessIdentifier: processID,
-		Cancel:            cancel,
+		ProcessIdentifier:   uint8(processID),
+		ProcessIdentifier32: processID,
+		Cancel:              cancel,
 	}
 }
 
 func (n *CovNotifier) startListening(ctx context.Context, server *Server) {
 	defer func() {
-		server.RemoveCovHandler(n.deviceIP, n.subscriptionId)
+		server.RemoveCovHandlerWithProcessID(n.deviceIP, n.subscriptionId)
 		for {
 			select {
 			case data := <-n.handler:

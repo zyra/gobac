@@ -8,12 +8,13 @@ import (
 )
 
 type CovNotification struct {
-	ProcessIdentifier uint32
-	DeviceObjectId    *types.ObjectId
-	ObjectId          *types.ObjectId
-	TimeRemaining     uint32
-	Properties        []*types.Property
-	Priority          uint8
+	ProcessIdentifier   uint8
+	ProcessIdentifier32 uint32
+	DeviceObjectId      *types.ObjectId
+	ObjectId            *types.ObjectId
+	TimeRemaining       uint32
+	Properties          []*types.Property
+	Priority            uint8
 }
 
 func (n *CovNotification) UnmarshalBinary(b []byte) error {
@@ -43,7 +44,8 @@ func (n *CovNotification) UnmarshalBinary(b []byte) error {
 	if err != nil {
 		return err
 	}
-	n.ProcessIdentifier = types.DecodeVarUint(processID)
+	n.ProcessIdentifier32 = types.DecodeVarUint(processID)
+	n.ProcessIdentifier = uint8(n.ProcessIdentifier32)
 
 	deviceObjectID, err := readContextValue(1, 4, 4)
 	if err != nil {

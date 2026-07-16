@@ -118,7 +118,7 @@ func TestApplicationServicesOverMemoryNetwork(t *testing.T) {
 		t.Fatalf("unexpected initial COV notification: %+v", initialCOV.Apdu)
 	}
 	initialNotification := initialCOV.ResponseData().(*pdu.CovNotification)
-	if initialNotification.ProcessIdentifier != 65537 || len(initialNotification.Properties) != 1 {
+	if initialNotification.ProcessIdentifier32 != 65537 || len(initialNotification.Properties) != 1 {
 		t.Fatalf("initial COV notification = %+v", initialNotification)
 	}
 	initialCOV.Release()
