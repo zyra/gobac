@@ -37,11 +37,11 @@ func (s *Server) ListenContext(ctx context.Context) error {
 	serverAddr := getUdpAddr(s.IPv4, s.ServerPort)
 	broadcastAddr := getUdpAddr(s.BroadcastIPv4, s.BroadcastPort)
 
-	broadcastConn, err := net.ListenUDP("udp4", broadcastAddr)
+	broadcastConn, err := listenBroadcastUDP(ctx, broadcastAddr)
 	if err != nil {
 		return err
 	}
-	unicastConn, err := net.ListenUDP("udp4", serverAddr)
+	unicastConn, err := listenBroadcastUDP(ctx, serverAddr)
 	if err != nil {
 		_ = broadcastConn.Close()
 		return err
