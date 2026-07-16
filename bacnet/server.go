@@ -336,7 +336,7 @@ func (s *Server) deliverConfirmedHandler(deviceIP net.IP, invokeID uint8, req *R
 }
 
 func (s *Server) deliverCovHandler(deviceIP net.IP, processID uint32, req *Request) (bool, bool) {
-	if processID == 0 || deviceIP == nil {
+	if deviceIP == nil {
 		return false, false
 	}
 	s.covHandlersMtx.RLock()
@@ -349,8 +349,7 @@ func (s *Server) deliverCovHandler(deviceIP net.IP, processID uint32, req *Reque
 }
 
 func (s *Server) getCovHandler(deviceIP net.IP, processId uint32) chan<- *Request {
-	if processId == 0 || deviceIP == nil {
-		//fmt.Println("getCovHandler got processId 0!")
+	if deviceIP == nil {
 		return nil
 	}
 
@@ -371,7 +370,7 @@ func (s *Server) SetCovHandler(deviceIP net.IP, processId uint8, handler chan<- 
 // SetCovHandlerWithProcessID registers a COV handler using the complete
 // BACnet Unsigned32 subscriber process identifier.
 func (s *Server) SetCovHandlerWithProcessID(deviceIP net.IP, processId uint32, handler chan<- *Request) {
-	if processId == 0 || deviceIP == nil {
+	if deviceIP == nil {
 		return
 	}
 
@@ -388,7 +387,7 @@ func (s *Server) RemoveCovHandler(deviceIP net.IP, processId uint8) {
 // RemoveCovHandlerWithProcessID removes a COV handler registered with a full
 // BACnet Unsigned32 subscriber process identifier.
 func (s *Server) RemoveCovHandlerWithProcessID(deviceIP net.IP, processId uint32) {
-	if processId == 0 || deviceIP == nil {
+	if deviceIP == nil {
 		return
 	}
 

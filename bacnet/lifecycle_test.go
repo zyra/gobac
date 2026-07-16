@@ -173,6 +173,26 @@ func TestCovHandlersPreserveUnsigned32ProcessIdentifier(t *testing.T) {
 	}
 }
 
+func TestCovHandlersAcceptZeroProcessIdentifier(t *testing.T) {
+	server := newLifecycleTestServer()
+	address := net.IPv4(192, 0, 2, 32)
+	handler := make(chan *Request, 1)
+	server.SetCovHandler(address, 0, handler)
+	if server.getCovHandler(address, 0) == nil {
+		t.Fatal("zero process identifier handler is missing")
+	}
+	request := NewRequest()
+	if found, delivered := server.deliverCovHandler(address, 0, request); !found || !delivered {
+		request.Release()
+		t.Fatalf("zero process identifier delivery = found %v, delivered %v", found, delivered)
+	}
+	(<-handler).Release()
+	server.RemoveCovHandler(address, 0)
+	if len(server.covHandlers) != 0 {
+		t.Fatal("zero process identifier handler was not removed")
+	}
+}
+
 func TestDeliverRequestDoesNotBlockFullHandler(t *testing.T) {
 	handler := make(chan *Request, 1)
 	handler <- NewRequest()
