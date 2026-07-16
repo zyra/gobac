@@ -1,6 +1,7 @@
 package simulator
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/zyra/gobac/v2/bacnet/types"
@@ -260,5 +261,68 @@ func TestCommandablePriorityArrayReads(t *testing.T) {
 	// Write denial: Priority_Array is read-only.
 	if err := device.WriteProperty(commandable, uint32(types.PropertyPriorityArray), []Value{{Tag: types.TagReal, Value: float32(1)}}, 0); err != ErrWriteDenied {
 		t.Fatalf("write to priority array error = %v, want ErrWriteDenied", err)
+	}
+}
+
+func TestReadNonArrayPropertyWithIndexFails(t *testing.T) {
+	property := &Property{ID: 85, Values: []Value{{Tag: 4, Value: float32(1)}}}
+
+	index := uint32(1)
+	if _, err := property.Read(&index); err != ErrPropertyNotArray {
+		t.Fatalf("non-array read with index error = %v, want ErrPropertyNotArray", err)
+	}
+
+	// Guard against over-eager rejection: a nil index must still read fine.
+	if _, err := property.Read(nil); err != nil {
+		t.Fatalf("non-array read with nil index: %v", err)
+	}
+}
+
+func TestReadArrayPropertyOutOfRangeIndexFails(t *testing.T) {
+	property := &Property{
+		ID:    76,
+		Array: true,
+		Values: []Value{
+			{Tag: 12, Value: uint32(1)},
+			{Tag: 12, Value: uint32(2)},
+		},
+	}
+
+	index := uint32(3)
+	if _, err := property.Read(&index); err != ErrInvalidArrayIndex {
+		t.Fatalf("out-of-range array index error = %v, want ErrInvalidArrayIndex", err)
+	}
+
+	// BacnetArrayAll (all-ones index) is the whole-array escape hatch on the
+	// same branch chain and must not be treated as out of range.
+	index = ^uint32(0)
+	values, err := property.Read(&index)
+	if err != nil {
+		t.Fatalf("BacnetArrayAll read: %v", err)
+	}
+	if len(values) != 2 {
+		t.Fatalf("BacnetArrayAll length = %d, want 2", len(values))
+	}
+}
+
+func TestNetworkAddDeviceGuards(t *testing.T) {
+	network := NewNetwork()
+
+	if err := network.AddDevice(nil); err == nil || err.Error() != "device is required" {
+		t.Fatalf("nil device error = %v, want %q", err, "device is required")
+	}
+
+	if err := network.AddDevice(&Device{ID: MaxObjectInstance + 1}); err == nil || !strings.Contains(err.Error(), "exceeds BACnet object-instance range") {
+		t.Fatalf("out-of-range device id error = %v", err)
+	}
+
+	if err := network.AddDevice(&Device{ID: 7}); err != nil {
+		t.Fatalf("add device 7: %v", err)
+	}
+	if err := network.AddDevice(&Device{ID: 7}); err == nil || !strings.Contains(err.Error(), "duplicate device id 7") {
+		t.Fatalf("duplicate device id error = %v", err)
+	}
+	if _, err := network.Device(7); err != nil {
+		t.Fatalf("device 7 should still be retrievable: %v", err)
 	}
 }
