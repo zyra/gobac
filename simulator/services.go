@@ -38,6 +38,8 @@ type SubscribeCOVRequest struct {
 	Cancel            bool
 }
 
+var errWritePriorityOutOfRange = errors.New("WriteProperty priority is out of range")
+
 func decodeReadProperty(data []byte) (ObjectID, PropertyReference, error) {
 	property := &types.Property{}
 	if err := property.UnmarshalBinary(data); err != nil {
@@ -103,8 +105,11 @@ func decodeWriteProperty(data []byte) (ObjectID, PropertyReference, []Value, uin
 	priority := uint8(0)
 	if property.Length < len(data) {
 		value, consumed, err := decodeContextUnsigned(data[property.Length:], 4)
-		if err != nil || property.Length+consumed != len(data) || value < 1 || value > PrioritySlots {
+		if err != nil || property.Length+consumed != len(data) {
 			return ObjectID{}, PropertyReference{}, nil, 0, errors.New("invalid WriteProperty priority")
+		}
+		if value < 1 || value > PrioritySlots {
+			return ObjectID{}, PropertyReference{}, nil, 0, errWritePriorityOutOfRange
 		}
 		priority = uint8(value)
 	}

@@ -17,6 +17,9 @@ var (
 	ErrUnknownProperty   = errors.New("unknown property")
 	ErrWriteDenied       = errors.New("write access denied")
 	ErrInvalidPriority   = errors.New("invalid priority")
+	ErrReservedPriority  = errors.New("reserved priority")
+	ErrValueOutOfRange   = errors.New("value out of range")
+	ErrInvalidDataType   = errors.New("invalid data type")
 	ErrPropertyNotArray  = errors.New("property is not an array")
 	ErrInvalidArrayIndex = errors.New("invalid array index")
 )
@@ -42,6 +45,10 @@ type Property struct {
 	Array             bool
 	COVIncrement      float64
 	RelinquishDefault *Value
+	MinimumUnsigned   uint32
+	MaximumUnsigned   uint32
+	Scalar            bool
+	ExpectedTag       uint8
 	priorities        [PrioritySlots]*Value
 }
 
@@ -74,13 +81,19 @@ func (p *Property) Write(values []Value, priority uint8) error {
 	if len(values) == 0 {
 		return errors.New("property value is required")
 	}
+	if err := p.validateValues(values); err != nil {
+		return err
+	}
 
 	if p.RelinquishDefault != nil {
 		if priority == 0 {
 			priority = PrioritySlots
 		}
-		if priority < 1 || priority > PrioritySlots || priority == 6 {
+		if priority < 1 || priority > PrioritySlots {
 			return ErrInvalidPriority
+		}
+		if priority == 6 {
+			return ErrReservedPriority
 		}
 		if values[0].Tag == 0 || values[0].Value == nil {
 			p.priorities[priority-1] = nil
@@ -95,6 +108,31 @@ func (p *Property) Write(values []Value, priority uint8) error {
 		return ErrInvalidPriority
 	}
 	p.Values = cloneValues(values)
+	return nil
+}
+
+func (p *Property) validateValues(values []Value) error {
+	if p.Scalar {
+		if len(values) != 1 {
+			return ErrInvalidDataType
+		}
+		if values[0].Tag == 0 || values[0].Value == nil {
+			if p.RelinquishDefault != nil {
+				return nil
+			}
+			return ErrInvalidDataType
+		}
+		if values[0].Tag != p.ExpectedTag {
+			return ErrInvalidDataType
+		}
+	}
+	if p.MaximumUnsigned == 0 || len(values) == 0 || values[0].Tag == 0 || values[0].Value == nil {
+		return nil
+	}
+	value, ok := values[0].Value.(uint32)
+	if !ok || value < p.MinimumUnsigned || value > p.MaximumUnsigned {
+		return ErrValueOutOfRange
+	}
 	return nil
 }
 

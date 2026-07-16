@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math"
 	"strconv"
 	"strings"
 
@@ -51,6 +52,7 @@ type ObjectSpec struct {
 	Writable          bool        `json:"writable,omitempty" yaml:"writable,omitempty"`
 	Commandable       bool        `json:"commandable,omitempty" yaml:"commandable,omitempty"`
 	RelinquishDefault interface{} `json:"relinquish_default,omitempty" yaml:"relinquish_default,omitempty"`
+	InitialPriority   uint8       `json:"initial_priority,omitempty" yaml:"initial_priority,omitempty"`
 	NumberOfStates    uint32      `json:"number_of_states,omitempty" yaml:"number_of_states,omitempty"`
 	COVIncrement      float64     `json:"cov_increment,omitempty" yaml:"cov_increment,omitempty"`
 }
@@ -151,6 +153,20 @@ func (s *Scenario) Validate() error {
 			}
 			if object.Commandable && !object.Writable {
 				object.Writable = true
+			}
+			if object.COVIncrement < 0 || math.IsNaN(object.COVIncrement) || math.IsInf(object.COVIncrement, 0) {
+				return fmt.Errorf("device %d object %s has an invalid cov_increment", device.ID, id)
+			}
+			if object.InitialPriority != 0 {
+				if !object.Commandable || object.PresentValue == nil {
+					return fmt.Errorf("device %d object %s initial_priority requires commandable and present_value", device.ID, id)
+				}
+				if object.InitialPriority > PrioritySlots || object.InitialPriority == 6 {
+					return fmt.Errorf("device %d object %s has an invalid initial_priority", device.ID, id)
+				}
+			}
+			if err := validateObjectSpecValues(objectType, *object); err != nil {
+				return fmt.Errorf("device %d object %s: %v", device.ID, id, err)
 			}
 		}
 	}
@@ -261,6 +277,10 @@ func buildObject(spec ObjectSpec) (*Object, error) {
 	}
 	property := scalarProperty(types.PropertyPresentValue, tag, normalized, spec.Writable)
 	property.COVIncrement = spec.COVIncrement
+	if isMultiStateObjectType(objectType) {
+		property.MinimumUnsigned = 1
+		property.MaximumUnsigned = spec.NumberOfStates
+	}
 	if spec.Commandable {
 		defaultTag, defaultValue, err := normalizePresentValue(objectType, spec.RelinquishDefault)
 		if err != nil {
@@ -270,6 +290,14 @@ func buildObject(spec ObjectSpec) (*Object, error) {
 			defaultTag, defaultValue = tag, normalized
 		}
 		property.RelinquishDefault = &Value{Tag: defaultTag, Value: defaultValue}
+		if spec.PresentValue != nil {
+			priority := spec.InitialPriority
+			if priority == 0 {
+				priority = PrioritySlots
+			}
+			initial := Value{Tag: tag, Value: normalized}
+			property.priorities[priority-1] = &initial
+		}
 	}
 	object.Properties[types.PropertyPresentValue] = property
 
@@ -282,6 +310,41 @@ func buildObject(spec ObjectSpec) (*Object, error) {
 	return object, nil
 }
 
+func validateObjectSpecValues(objectType uint16, spec ObjectSpec) error {
+	_, presentValue, err := normalizePresentValue(objectType, spec.PresentValue)
+	if err != nil {
+		return err
+	}
+	if !isMultiStateObjectType(objectType) {
+		return nil
+	}
+	if spec.NumberOfStates == 0 {
+		return errors.New("number_of_states must be greater than zero")
+	}
+	if presentValue.(uint32) > spec.NumberOfStates {
+		return errors.New("present_value exceeds number_of_states")
+	}
+	if spec.Commandable && spec.RelinquishDefault != nil {
+		_, defaultValue, err := normalizePresentValue(objectType, spec.RelinquishDefault)
+		if err != nil {
+			return err
+		}
+		if defaultValue.(uint32) > spec.NumberOfStates {
+			return errors.New("relinquish_default exceeds number_of_states")
+		}
+	}
+	return nil
+}
+
+func isMultiStateObjectType(objectType uint16) bool {
+	switch objectType {
+	case uint16(types.ObjectTypeMultiStateInput), uint16(types.ObjectTypeMultiStateOutput), uint16(types.ObjectTypeMultiStateValue):
+		return true
+	default:
+		return false
+	}
+}
+
 func addCommonProperties(object *Object, name, description string) {
 	object.Properties[types.PropertyObjectIdentifier] = scalarProperty(types.PropertyObjectIdentifier, types.TagObjectId, object.ID, false)
 	object.Properties[types.PropertyObjectName] = scalarProperty(types.PropertyObjectName, types.TagCharacterString, name, false)
@@ -292,7 +355,7 @@ func addCommonProperties(object *Object, name, description string) {
 }
 
 func scalarProperty(id uint32, tag uint8, value interface{}, writable bool) *Property {
-	return &Property{ID: id, Writable: writable, Values: []Value{{Tag: tag, Value: value}}}
+	return &Property{ID: id, Writable: writable, Values: []Value{{Tag: tag, Value: value}}, Scalar: true, ExpectedTag: tag}
 }
 
 func objectTypeNumber(name string) (uint16, error) {
@@ -325,6 +388,9 @@ func normalizePresentValue(objectType uint16, value interface{}) (uint8, interfa
 			value = float64(0)
 		}
 		number, err := numericFloat64(value)
+		if err == nil && (math.IsNaN(number) || math.IsInf(number, 0) || number > math.MaxFloat32 || number < -math.MaxFloat32) {
+			err = errors.New("analog present value is outside the BACnet REAL range")
+		}
 		return types.TagReal, float32(number), err
 	case uint16(types.ObjectTypeBinaryInput), uint16(types.ObjectTypeBinaryOutput), uint16(types.ObjectTypeBinaryValue):
 		switch typed := value.(type) {
@@ -382,19 +448,28 @@ func numericUint32(value interface{}) (uint32, error) {
 	case uint32:
 		return typed, nil
 	case uint64:
+		if typed > math.MaxUint32 {
+			return 0, fmt.Errorf("%v exceeds the unsigned 32-bit range", value)
+		}
 		return uint32(typed), nil
 	case int:
 		if typed < 0 {
 			return 0, fmt.Errorf("%d is negative", typed)
+		}
+		if uint64(typed) > math.MaxUint32 {
+			return 0, fmt.Errorf("%v exceeds the unsigned 32-bit range", value)
 		}
 		return uint32(typed), nil
 	case int64:
 		if typed < 0 {
 			return 0, fmt.Errorf("%d is negative", typed)
 		}
+		if uint64(typed) > math.MaxUint32 {
+			return 0, fmt.Errorf("%v exceeds the unsigned 32-bit range", value)
+		}
 		return uint32(typed), nil
 	case float64:
-		if typed < 0 || typed != float64(uint32(typed)) {
+		if typed < 0 || typed > math.MaxUint32 || typed != math.Trunc(typed) {
 			return 0, fmt.Errorf("%v is not an unsigned integer", value)
 		}
 		return uint32(typed), nil

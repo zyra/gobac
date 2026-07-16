@@ -52,7 +52,7 @@ func (a *Application) handleWhoIs(_ context.Context, request *responder.Request)
 	if err != nil {
 		return nil, err
 	}
-	destination := transport.NewEndpoint(net.IPv4bcast, request.Source.Port)
+	destination := transport.NewEndpoint(net.IPv4bcast, request.Destination.Port)
 	return []responder.Response{
 		responder.Unconfirmed(types.UnconfirmedServiceIAm, payload).To(destination).AsBroadcast(),
 	}, nil
@@ -77,6 +77,9 @@ func (a *Application) handleReadProperty(_ context.Context, request *responder.R
 func (a *Application) handleWriteProperty(_ context.Context, request *responder.Request) ([]responder.Response, error) {
 	object, reference, values, priority, err := decodeWriteProperty(request.Packet.Apdu.Payload)
 	if err != nil {
+		if err == errWritePriorityOutOfRange {
+			return []responder.Response{responder.Reject(types.RejectReasonParameterOutOfRange)}, nil
+		}
 		return []responder.Response{responder.Reject(types.RejectReasonInvalidTag)}, nil
 	}
 	if reference.ArrayIndex != nil {
@@ -313,10 +316,12 @@ func modelError(err error) responder.Response {
 		return responder.ErrorResponse(types.ErrorClassProperty, types.ErrorCodePropertyIsNotAnArray)
 	case ErrInvalidArrayIndex:
 		return responder.ErrorResponse(types.ErrorClassProperty, types.ErrorCodeInvalidArrayIndex)
-	case ErrWriteDenied:
+	case ErrWriteDenied, ErrReservedPriority:
 		return responder.ErrorResponse(types.ErrorClassProperty, types.ErrorCodeWriteAccessDenied)
-	case ErrInvalidPriority:
+	case ErrInvalidPriority, ErrValueOutOfRange:
 		return responder.ErrorResponse(types.ErrorClassProperty, types.ErrorCodeValueOutOfRange)
+	case ErrInvalidDataType:
+		return responder.ErrorResponse(types.ErrorClassProperty, types.ErrorCodeInvalidDataType)
 	default:
 		return responder.ErrorResponse(types.ErrorClassServices, types.ErrorCodeServiceRequestDenied)
 	}

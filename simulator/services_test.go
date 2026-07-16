@@ -55,6 +55,18 @@ func TestWritePropertyServiceCodec(t *testing.T) {
 	}
 }
 
+func TestWritePropertyPriorityOutOfRange(t *testing.T) {
+	object := ObjectID{Type: uint16(types.ObjectTypeAnalogOutput), Instance: 2}
+	payload, err := encodeReadPropertyResult(object, PropertyReference{ID: uint32(types.PropertyPresentValue)}, []Value{{Tag: types.TagReal, Value: float32(42)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload = append(payload, 0x49, 17)
+	if _, _, _, _, err := decodeWriteProperty(payload); err != errWritePriorityOutOfRange {
+		t.Fatalf("priority 17 error = %v", err)
+	}
+}
+
 func TestWhoIsAndIAmServiceCodecs(t *testing.T) {
 	low, high, err := decodeWhoIs([]byte{0x09, 0x64, 0x1a, 0x01, 0x2c})
 	if err != nil {

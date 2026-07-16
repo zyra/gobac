@@ -154,6 +154,9 @@ func (s *Server) writeResponse(ctx context.Context, conn transport.Conn, incomin
 	packet.Header.Function = types.BvlcFunctionOriginalUnicastNpdu
 	if response.Broadcast {
 		packet.Header.Function = types.BvlcFunctionOriginalBroadcastNpdu
+		packet.Npci.DestinationNet = 0xffff
+		packet.Npci.DestinationLength = 0
+		packet.Npci.DestinationMAC = nil
 	}
 
 	pduType := response.PDUType & 0xf0

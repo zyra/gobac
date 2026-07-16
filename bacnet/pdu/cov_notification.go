@@ -55,6 +55,9 @@ func (n *CovNotification) UnmarshalBinary(b []byte) error {
 	if err := n.DeviceObjectId.UnmarshalBinary(deviceObjectID); err != nil {
 		return err
 	}
+	if n.DeviceObjectId.Type != types.ObjectTypeDevice {
+		return errors.New("COV initiating object is not a device")
+	}
 
 	monitoredObjectID, err := readContextValue(2, 4, 4)
 	if err != nil {
@@ -130,6 +133,9 @@ func (n *CovNotification) UnmarshalBinary(b []byte) error {
 
 	if offset != len(b) {
 		return errors.New("unexpected trailing COV notification data")
+	}
+	if len(properties) == 0 {
+		return errors.New("COV notification has an empty list-of-values")
 	}
 	n.Properties = properties
 	return nil

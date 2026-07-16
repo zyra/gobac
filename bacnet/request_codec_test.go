@@ -28,3 +28,19 @@ func TestParseRequestRequiresExactBVLCLength(t *testing.T) {
 		}
 	}
 }
+
+func TestRequestMarshalEnforcesUnsegmentedAPDUMaximum(t *testing.T) {
+	request := NewRequest()
+	defer request.Release()
+	request.Header.Function = types.BvlcFunctionOriginalUnicastNpdu
+	request.Apdu.PduType = types.PduTypeUnconfirmedServiceRequest
+	request.Apdu.ServiceChoice = types.UnconfirmedServiceWhoIs
+	request.Apdu.Payload = make([]byte, types.MaxApdu-2)
+	if _, err := request.MarshalBinary(); err != nil {
+		t.Fatalf("maximum APDU: %v", err)
+	}
+	request.Apdu.Payload = make([]byte, types.MaxApdu-1)
+	if _, err := request.MarshalBinary(); err == nil {
+		t.Fatal("oversized APDU was accepted")
+	}
+}

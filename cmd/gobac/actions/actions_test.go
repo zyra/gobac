@@ -112,4 +112,8 @@ func TestBeforeDoesNotStartServerForHelp(t *testing.T) {
 	server = nil
 	require.NoError(t, Before(actionContext("help")))
 	require.Nil(t, server)
+
+	require.NoError(t, Before(actionContext("readprop", "--help")))
+	require.Nil(t, server)
+	require.False(t, hasHelpArgument(cli.Args{"writeprop", "address", "2", "1", "85", "7", "help"}))
 }

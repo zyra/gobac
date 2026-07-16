@@ -33,7 +33,7 @@ func newLifecycleTestServer() *Server {
 		close:          make(chan struct{}),
 		start:          make(chan struct{}),
 		cHandlersMtx:   &sync.RWMutex{},
-		cHandlers:      make(map[string]chan<- *Request),
+		cHandlers:      make(map[string]confirmedHandler),
 		ucHandlersMtx:  &sync.RWMutex{},
 		ucHandlers:     make(map[types.UnconfirmedService]map[uint64]chan<- *Request),
 		covHandlersMtx: &sync.RWMutex{},
@@ -117,6 +117,36 @@ func TestRequestReleaseDrainsQueuedResponse(t *testing.T) {
 	if len(responseQueue) != 0 {
 		t.Fatal("queued response remained after request release")
 	}
+}
+
+func TestConfirmedHandlerIgnoresWrongService(t *testing.T) {
+	server := newLifecycleTestServer()
+	address := net.IPv4(192, 0, 2, 23)
+	handler := make(chan *Request, 1)
+	server.setConfirmedHandlerForService(address, 9, types.ConfirmedServiceReadProperty, handler)
+
+	wrong := NewRequest()
+	wrong.Apdu.PduType = types.PduTypeSimpleAck
+	wrong.Apdu.InvokeID = 9
+	wrong.Apdu.ServiceChoice = types.ConfirmedServiceWriteProperty
+	if found, delivered := server.deliverConfirmedHandler(address, 9, wrong); found || delivered {
+		wrong.Release()
+		t.Fatalf("wrong service delivery = found %v, delivered %v", found, delivered)
+	}
+	wrong.Release()
+	if server.getConfirmedHandler(address, 9) == nil {
+		t.Fatal("wrong service removed the confirmed handler")
+	}
+
+	correct := NewRequest()
+	correct.Apdu.PduType = types.PduTypeComplexAck
+	correct.Apdu.InvokeID = 9
+	correct.Apdu.ServiceChoice = types.ConfirmedServiceReadProperty
+	if found, delivered := server.deliverConfirmedHandler(address, 9, correct); !found || !delivered {
+		correct.Release()
+		t.Fatalf("correct service delivery = found %v, delivered %v", found, delivered)
+	}
+	(<-handler).Release()
 }
 
 func TestSendMarshalFailureCleansTransaction(t *testing.T) {

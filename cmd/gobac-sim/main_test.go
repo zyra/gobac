@@ -71,6 +71,21 @@ func TestUnknownCommand(t *testing.T) {
 	}
 }
 
+func TestHelp(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := runCLI([]string{"--help"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("help returned %d: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "gobac-sim run") {
+		t.Fatalf("unexpected help: %s", stdout.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := runCLI([]string{"validate", "help"}, &stdout, &stderr); code != 1 {
+		t.Fatalf("scenario named help returned %d", code)
+	}
+}
+
 func TestEquivalentResolvedEndpointsAreRejected(t *testing.T) {
 	path := writeScenario(t, `version: 1
 network:
@@ -263,7 +278,7 @@ func TestBroadcastWhoIsDiscoversEveryDevice(t *testing.T) {
 		}
 	}()
 
-	client, err := transport.ListenUDP(transport.NewEndpoint(net.IPv4zero, 0))
+	client, err := transport.ListenUDP(transport.NewEndpoint(net.IPv4zero, port))
 	if err != nil {
 		t.Fatal(err)
 	}

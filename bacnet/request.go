@@ -164,7 +164,7 @@ func (r *Request) Send(dest net.IP, server *Server) error {
 		return err
 	} else {
 		r.server = server
-		server.SetConfirmedHandler(dest, r.InvokeID(), r.tx)
+		server.setConfirmedHandlerForService(dest, r.InvokeID(), types.ConfirmedService(r.ServiceChoice()), r.tx)
 
 		if err := server.Send(data, destUdp); err != nil {
 			r.cleanupTransaction()
@@ -262,6 +262,13 @@ func (r *Request) MarshalBinary() ([]byte, error) {
 
 	commonApduLen := len(apduCommonBytes)
 	npciLen := len(npciBytes)
+	if commonApduLen > types.MaxApdu {
+		return nil, errors.New("APDU exceeds the unsegmented maximum")
+	}
+	totalLength := 4 + commonApduLen + npciLen
+	if totalLength > int(^uint16(0)) {
+		return nil, errors.New("BACnet/IP datagram exceeds the BVLC length field")
+	}
 
 	r.Header.NsduLength = types.Uint16(commonApduLen + npciLen)
 	r.Header.BvlcLength = r.Header.NsduLength + 4

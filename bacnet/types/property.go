@@ -93,7 +93,18 @@ func (p *Property) UnmarshalBinary(b []byte) error {
 		return errors.New("received an empty byte slice")
 	}
 
-	full := p.ObjectId == nil
+	firstTag := &Tag{}
+	if firstTag.DecodeTag(b) == 0 {
+		return errors.New("malformed property tag")
+	}
+	full := firstTag.IsContext(0) && !firstTag.Opening && !firstTag.Closing && firstTag.LenValue == 4
+	objectID := p.ObjectId
+	ipAddress := p.IPAddress
+	*p = Property{}
+	p.IPAddress = ipAddress
+	if !full {
+		p.ObjectId = objectID
+	}
 	tagStart := uint8(0)
 	offset := 0
 	decode := func() (*Tag, int, error) {

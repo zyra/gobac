@@ -135,6 +135,7 @@ func (n *Npci) MarshalBinary() (b []byte, e error) {
 }
 
 func (n *Npci) UnmarshalBinary(b []byte) error {
+	n.Reset()
 	buff := bytes.NewBuffer(b)
 
 	if b, e := buff.ReadByte(); e != nil {

@@ -50,6 +50,21 @@ func TestPropertyEncodesEveryValue(t *testing.T) {
 	}
 }
 
+func TestPropertyCanDecodeMultipleFullValues(t *testing.T) {
+	first := []byte{0x0c, 0x00, 0x40, 0x00, 0x01, 0x19, 0x55}
+	second := []byte{0x0c, 0x02, 0x00, 0x00, 0x02, 0x19, 0x4d}
+	var property Property
+	if err := property.UnmarshalBinary(first); err != nil {
+		t.Fatal(err)
+	}
+	if err := property.UnmarshalBinary(second); err != nil {
+		t.Fatal(err)
+	}
+	if property.ObjectId == nil || property.ObjectId.Type != ObjectTypeDevice || property.ObjectId.InstanceNumber() != 2 || property.ID != 77 {
+		t.Fatalf("second property = %+v", property)
+	}
+}
+
 func TestPropertyArrayIndexEncoding(t *testing.T) {
 	tests := []struct {
 		name  string

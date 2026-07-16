@@ -162,6 +162,45 @@ func TestApplicationCOVIncrement(t *testing.T) {
 	}
 }
 
+func TestApplicationWritePropertyPriorityErrors(t *testing.T) {
+	device := applicationTestDevice()
+	application := NewApplication(device, RealClock{})
+	object := ObjectID{Type: uint16(types.ObjectTypeAnalogValue), Instance: 1}
+	payload, err := encodeReadPropertyResult(object, PropertyReference{ID: uint32(types.PropertyPresentValue)}, []Value{{Tag: types.TagReal, Value: float32(21)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	request := bacnet.NewRequest()
+	defer request.Release()
+	request.Apdu.Payload = append(append([]byte(nil), payload...), 0x49, 17)
+	responses, err := application.handleWriteProperty(context.Background(), &responder.Request{Packet: request})
+	if err != nil || len(responses) != 1 || responses[0].PDUType != types.PduTypeReject || responses[0].RejectReason != types.RejectReasonParameterOutOfRange {
+		t.Fatalf("priority 17 response = %+v, %v", responses, err)
+	}
+
+	property := device.Objects[object].Properties[uint32(types.PropertyPresentValue)]
+	property.Scalar = true
+	property.ExpectedTag = types.TagReal
+	defaultValue := property.Values[0]
+	property.RelinquishDefault = &defaultValue
+	request.Apdu.Payload = append(append([]byte(nil), payload...), 0x49, 6)
+	responses, err = application.handleWriteProperty(context.Background(), &responder.Request{Packet: request})
+	if err != nil || len(responses) != 1 || responses[0].PDUType != types.PduTypeError || responses[0].ErrorCode != types.ErrorCodeWriteAccessDenied {
+		t.Fatalf("reserved priority response = %+v, %v", responses, err)
+	}
+
+	wrongPayload, err := encodeReadPropertyResult(object, PropertyReference{ID: uint32(types.PropertyPresentValue)}, []Value{{Tag: types.TagCharacterString, Value: "wrong"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Apdu.Payload = append(wrongPayload, 0x49, 8)
+	responses, err = application.handleWriteProperty(context.Background(), &responder.Request{Packet: request})
+	if err != nil || len(responses) != 1 || responses[0].PDUType != types.PduTypeError || responses[0].ErrorCode != types.ErrorCodeInvalidDataType {
+		t.Fatalf("wrong data type response = %+v, %v", responses, err)
+	}
+}
+
 func TestApplicationPrunesExpiredSubscriberEndpoints(t *testing.T) {
 	clock := NewManualClock(time.Unix(1000, 0))
 	application := NewApplication(applicationTestDevice(), clock)
@@ -188,7 +227,7 @@ func applicationTestDevice() *Device {
 				ID:   objectID,
 				Name: "Setpoint",
 				Properties: map[uint32]*Property{
-					uint32(types.PropertyPresentValue): {ID: uint32(types.PropertyPresentValue), Writable: true, Values: []Value{{Tag: types.TagReal, Value: float32(20.5)}}},
+					uint32(types.PropertyPresentValue): {ID: uint32(types.PropertyPresentValue), Writable: true, Scalar: true, ExpectedTag: types.TagReal, Values: []Value{{Tag: types.TagReal, Value: float32(20.5)}}},
 					uint32(types.PropertyObjectName):   {ID: uint32(types.PropertyObjectName), Values: []Value{{Tag: types.TagCharacterString, Value: "Setpoint"}}},
 				},
 			},

@@ -29,6 +29,10 @@ func main() {
 }
 
 func runCLI(args []string, stdout, stderr io.Writer) int {
+	if len(args) == 1 && (args[0] == "help" || args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprintln(stdout, usage)
+		return 0
+	}
 	if len(args) != 2 {
 		fmt.Fprintln(stderr, usage)
 		return 2

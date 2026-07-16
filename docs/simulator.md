@@ -36,6 +36,8 @@ Broadcast behavior depends on the host network configuration. Multi-IP scenarios
 
 Confirmed COV notifications use valid confirmed-request APDUs and invoke identifiers. The initial simulator does not retransmit notifications when an acknowledgment is missing.
 
+For a commandable object, `relinquish_default` is the fallback value. An explicit `present_value` starts as a command at `initial_priority` (default 16) so the configured initial state is observable and can later be relinquished.
+
 ## Current constraints
 
 - BACnet/IP over IPv4 only

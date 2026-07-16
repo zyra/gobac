@@ -520,4 +520,48 @@ func TestBroadcastAndDestinationOverride(t *testing.T) {
 	if writes[0].payload[1] != byte(types.BvlcFunctionOriginalBroadcastNpdu) {
 		t.Fatalf("BVLC function = %#x", writes[0].payload[1])
 	}
+	packet, err := bacnet.ParseRequest(writes[0].payload, writes[0].destination.UDPAddr())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer packet.Release()
+	if packet.Npci.DestinationNet != 0xffff || packet.Npci.DestinationLength != 0 || packet.Npci.HopCount != 0xff {
+		t.Fatalf("broadcast NPCI = %+v", packet.Npci)
+	}
+}
+
+func TestBroadcastResponseClearsRoutedDestination(t *testing.T) {
+	server := NewServer()
+	server.Handle(types.PduTypeUnconfirmedServiceRequest, 80, func(context.Context, *Request) ([]Response, error) {
+		return []Response{Unconfirmed(81, nil).AsBroadcast()}, nil
+	})
+	request := bacnet.NewRequest()
+	request.Header.Function = types.BvlcFunctionOriginalUnicastNpdu
+	request.Npci.SourceNet = 123
+	sourceMAC := net.HardwareAddr{0xaa, 0xbb}
+	request.Npci.SourceLength = uint8(len(sourceMAC))
+	request.Npci.SourceMAC = &sourceMAC
+	request.Apdu.PduType = types.PduTypeUnconfirmedServiceRequest
+	request.Apdu.ServiceChoice = 80
+	encoded, err := request.MarshalBinary()
+	request.Release()
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn := &recordingConn{}
+	if err := server.ServeDatagram(context.Background(), conn, incomingDatagram(encoded)); err != nil {
+		t.Fatal(err)
+	}
+	writes := conn.written()
+	if len(writes) != 1 {
+		t.Fatalf("got %d writes, want 1", len(writes))
+	}
+	response, err := bacnet.ParseRequest(writes[0].payload, writes[0].destination.UDPAddr())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Release()
+	if response.Npci.DestinationNet != 0xffff || response.Npci.DestinationLength != 0 || response.Npci.DestinationMAC != nil {
+		t.Fatalf("broadcast response retained routed destination: %+v", response.Npci)
+	}
 }

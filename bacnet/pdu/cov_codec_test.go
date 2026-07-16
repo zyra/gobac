@@ -51,7 +51,7 @@ func TestCovNotificationAcceptsUnsigned32ProcessIdentifier(t *testing.T) {
 		0x1c, 0x02, 0x00, 0x00, 0x01,
 		0x2c, 0x00, 0x00, 0x00, 0x01,
 		0x39, 0x00,
-		0x4e, 0x4f,
+		0x4e, 0x09, 0x55, 0x2e, 0x21, 0x01, 0x2f, 0x4f,
 	}
 	var notification CovNotification
 	if err := notification.UnmarshalBinary(wire); err != nil {
@@ -59,6 +59,34 @@ func TestCovNotificationAcceptsUnsigned32ProcessIdentifier(t *testing.T) {
 	}
 	if notification.ProcessIdentifier32 != ^uint32(0) {
 		t.Fatalf("process identifier = %d", notification.ProcessIdentifier32)
+	}
+}
+
+func TestCovNotificationRejectsNonDeviceInitiator(t *testing.T) {
+	wire := []byte{
+		0x09, 0x01,
+		0x1c, 0x00, 0x00, 0x00, 0x01,
+		0x2c, 0x00, 0x00, 0x00, 0x01,
+		0x39, 0x00,
+		0x4e, 0x09, 0x55, 0x2e, 0x21, 0x01, 0x2f, 0x4f,
+	}
+	var notification CovNotification
+	if err := notification.UnmarshalBinary(wire); err == nil {
+		t.Fatal("non-device initiating object was accepted")
+	}
+}
+
+func TestCovNotificationRejectsEmptyListOfValues(t *testing.T) {
+	wire := []byte{
+		0x09, 0x01,
+		0x1c, 0x02, 0x00, 0x00, 0x01,
+		0x2c, 0x00, 0x00, 0x00, 0x01,
+		0x39, 0x00,
+		0x4e, 0x4f,
+	}
+	var notification CovNotification
+	if err := notification.UnmarshalBinary(wire); err == nil {
+		t.Fatal("empty list-of-values was accepted")
 	}
 }
 

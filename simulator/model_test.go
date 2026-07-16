@@ -2,6 +2,8 @@ package simulator
 
 import (
 	"testing"
+
+	"github.com/zyra/gobac/bacnet/types"
 )
 
 func TestCommandablePropertyPriorityResolution(t *testing.T) {
@@ -49,8 +51,49 @@ func TestCommandablePropertyPriorityResolution(t *testing.T) {
 func TestCommandablePropertyRejectsReservedPrioritySix(t *testing.T) {
 	defaultValue := Value{Tag: 4, Value: float32(18)}
 	property := &Property{ID: 85, Writable: true, RelinquishDefault: &defaultValue}
-	if err := property.Write([]Value{{Tag: 4, Value: float32(21)}}, 6); err != ErrInvalidPriority {
+	if err := property.Write([]Value{{Tag: 4, Value: float32(21)}}, 6); err != ErrReservedPriority {
 		t.Fatalf("priority 6 error = %v", err)
+	}
+}
+
+func TestMultiStatePropertyEnforcesNumberOfStates(t *testing.T) {
+	property := &Property{
+		ID:              85,
+		Writable:        true,
+		Values:          []Value{{Tag: 2, Value: uint32(1)}},
+		MinimumUnsigned: 1,
+		MaximumUnsigned: 3,
+		Scalar:          true,
+		ExpectedTag:     types.TagUnsigned,
+	}
+	if err := property.Write([]Value{{Tag: 2, Value: uint32(4)}}, 0); err != ErrValueOutOfRange {
+		t.Fatalf("out-of-range multi-state write error = %v", err)
+	}
+	if err := property.Write([]Value{{Tag: 2, Value: uint32(3)}}, 0); err != nil {
+		t.Fatalf("valid multi-state write: %v", err)
+	}
+}
+
+func TestScalarPropertiesRejectWrongBACnetType(t *testing.T) {
+	tests := []struct {
+		name     string
+		expected uint8
+		wrong    Value
+	}{
+		{"analog", types.TagReal, Value{Tag: types.TagCharacterString, Value: "wrong"}},
+		{"binary", types.TagEnumerated, Value{Tag: types.TagBoolean, Value: true}},
+		{"multi-state", types.TagUnsigned, Value{Tag: types.TagEnumerated, Value: uint32(1)}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			property := &Property{Writable: true, Scalar: true, ExpectedTag: test.expected}
+			if err := property.Write([]Value{test.wrong}, 0); err != ErrInvalidDataType {
+				t.Fatalf("wrong type error = %v", err)
+			}
+			if err := property.Write([]Value{{Tag: test.expected, Value: uint32(1)}, {Tag: test.expected, Value: uint32(2)}}, 0); err != ErrInvalidDataType {
+				t.Fatalf("multiple scalar values error = %v", err)
+			}
+		})
 	}
 }
 

@@ -41,12 +41,18 @@ type Server struct {
 	start chan struct{}
 
 	cHandlersMtx   *sync.RWMutex
-	cHandlers      map[string]chan<- *Request
+	cHandlers      map[string]confirmedHandler
 	ucHandlers     map[types.UnconfirmedService]map[uint64]chan<- *Request
 	ucHandlersMtx  *sync.RWMutex
 	ucHandlerID    uint64
 	covHandlers    map[string]chan<- *Request
 	covHandlersMtx *sync.RWMutex
+}
+
+type confirmedHandler struct {
+	handler         chan<- *Request
+	expectedService types.ConfirmedService
+	matchService    bool
 }
 
 var rxBuffPool = sync.Pool{
@@ -80,7 +86,7 @@ func (s *Server) Configure(config *ServerConfig) error {
 	s.BroadcastPort = config.ListenPort
 	s.DefaultTimeout = config.DefaultTimeout
 	s.cHandlersMtx = new(sync.RWMutex)
-	s.cHandlers = make(map[string]chan<- *Request)
+	s.cHandlers = make(map[string]confirmedHandler)
 	s.ucHandlers = make(map[types.UnconfirmedService]map[uint64]chan<- *Request)
 	s.ucHandlersMtx = new(sync.RWMutex)
 	s.covHandlers = make(map[string]chan<- *Request)
@@ -292,8 +298,8 @@ func (s *Server) getConfirmedHandler(deviceIP net.IP, invokeId uint8) chan<- *Re
 	s.cHandlersMtx.RLock()
 	defer s.cHandlersMtx.RUnlock()
 
-	if h := s.cHandlers[deviceIP.String()+"."+strconv.Itoa(int(invokeId))]; h != nil {
-		return h
+	if h, ok := s.cHandlers[deviceIP.String()+"."+strconv.Itoa(int(invokeId))]; ok {
+		return h.handler
 	}
 	return nil
 }
@@ -306,7 +312,22 @@ func (s *Server) SetConfirmedHandler(deviceIP net.IP, invokeId uint8, handler ch
 	s.cHandlersMtx.Lock()
 	defer s.cHandlersMtx.Unlock()
 
-	s.cHandlers[deviceIP.String()+"."+strconv.Itoa(int(invokeId))] = handler
+	s.cHandlers[deviceIP.String()+"."+strconv.Itoa(int(invokeId))] = confirmedHandler{handler: handler}
+}
+
+func (s *Server) setConfirmedHandlerForService(deviceIP net.IP, invokeID uint8, service types.ConfirmedService, handler chan<- *Request) {
+	if invokeID == 0 || deviceIP == nil {
+		return
+	}
+
+	s.cHandlersMtx.Lock()
+	defer s.cHandlersMtx.Unlock()
+
+	s.cHandlers[deviceIP.String()+"."+strconv.Itoa(int(invokeID))] = confirmedHandler{
+		handler:         handler,
+		expectedService: service,
+		matchService:    true,
+	}
 }
 
 func (s *Server) RemoveConfirmedHandler(deviceIP net.IP, invokeId uint8) {
@@ -327,12 +348,20 @@ func (s *Server) deliverConfirmedHandler(deviceIP net.IP, invokeID uint8, req *R
 	key := deviceIP.String() + "." + strconv.Itoa(int(invokeID))
 	s.cHandlersMtx.Lock()
 	defer s.cHandlersMtx.Unlock()
-	h := s.cHandlers[key]
-	delete(s.cHandlers, key)
-	if h == nil {
+	h, ok := s.cHandlers[key]
+	if !ok {
 		return false, false
 	}
-	return true, deliverRequest(h, req)
+	if h.matchService {
+		switch req.PduType() {
+		case types.PduTypeSimpleAck, types.PduTypeComplexAck, types.PduTypeError:
+			if req.ServiceChoice() != uint8(h.expectedService) {
+				return false, false
+			}
+		}
+	}
+	delete(s.cHandlers, key)
+	return true, deliverRequest(h.handler, req)
 }
 
 func (s *Server) deliverCovHandler(deviceIP net.IP, processID uint32, req *Request) (bool, bool) {

@@ -27,6 +27,7 @@ devices:
         writable: true
         commandable: true
         relinquish_default: 0
+        initial_priority: 16
   - id: 1002
     port: 47809
     name: Zone Controller 1

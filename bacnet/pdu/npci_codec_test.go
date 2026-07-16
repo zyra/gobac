@@ -55,6 +55,20 @@ func TestNpciMarshalRoutedAddresses(t *testing.T) {
 	}
 }
 
+func TestNpciCanDecodeLocalAfterRouted(t *testing.T) {
+	var npci Npci
+	routed := []byte{1, 0x28, 0x12, 0x34, 1, 0xaa, 0x56, 0x78, 1, 0xcc, 0xff}
+	if err := npci.UnmarshalBinary(routed); err != nil {
+		t.Fatal(err)
+	}
+	if err := npci.UnmarshalBinary([]byte{1, 0}); err != nil {
+		t.Fatal(err)
+	}
+	if npci.Length != 2 || npci.DestinationNet != 0 || npci.SourceNet != 0 || npci.DestinationMAC != nil || npci.SourceMAC != nil {
+		t.Fatalf("local NPCI retained routed state: %+v", npci)
+	}
+}
+
 func TestNpciRejectsTruncatedAddresses(t *testing.T) {
 	packet := []byte{
 		0x01, 0x28,
