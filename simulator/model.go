@@ -79,7 +79,7 @@ func (p *Property) Write(values []Value, priority uint8) error {
 		if priority == 0 {
 			priority = PrioritySlots
 		}
-		if priority < 1 || priority > PrioritySlots {
+		if priority < 1 || priority > PrioritySlots || priority == 6 {
 			return ErrInvalidPriority
 		}
 		if values[0].Tag == 0 || values[0].Value == nil {

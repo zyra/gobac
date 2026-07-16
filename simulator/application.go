@@ -162,7 +162,7 @@ func (a *Application) handleSubscribeCOV(_ context.Context, request *responder.R
 }
 
 func (a *Application) notifications(object ObjectID) []responder.Response {
-	active := a.Subscriptions.Active()
+	active := a.activeSubscriptions()
 	responses := make([]responder.Response, 0, len(active))
 	for _, subscription := range active {
 		if subscription.Key.Object != object {
@@ -249,12 +249,28 @@ func (a *Application) notification(subscription Subscription, endpoint transport
 }
 
 func (a *Application) subscription(key SubscriptionKey) Subscription {
-	for _, subscription := range a.Subscriptions.Active() {
+	for _, subscription := range a.activeSubscriptions() {
 		if subscription.Key == key {
 			return subscription
 		}
 	}
 	return Subscription{Key: key}
+}
+
+func (a *Application) activeSubscriptions() []Subscription {
+	active := a.Subscriptions.Active()
+	keys := make(map[SubscriptionKey]struct{}, len(active))
+	for _, subscription := range active {
+		keys[subscription.Key] = struct{}{}
+	}
+	a.mu.Lock()
+	for key := range a.subscribers {
+		if _, exists := keys[key]; !exists {
+			delete(a.subscribers, key)
+		}
+	}
+	a.mu.Unlock()
+	return active
 }
 
 func (a *Application) nextInvokeID() uint8 {

@@ -98,6 +98,19 @@ func TestUDPTransportRoundTrip(t *testing.T) {
 	}
 }
 
+func TestUDPWriteHonorsCanceledContext(t *testing.T) {
+	conn, err := ListenUDP(NewEndpoint(net.IPv4(127, 0, 0, 1), 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := conn.Write(ctx, conn.LocalEndpoint(), []byte("ignored")); err != context.Canceled {
+		t.Fatalf("write error = %v, want context.Canceled", err)
+	}
+}
+
 func TestUDPAllowsWildcardBroadcastListenerWithSpecificDevice(t *testing.T) {
 	probe, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4zero})
 	if err != nil {

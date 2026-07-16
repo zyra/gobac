@@ -46,6 +46,14 @@ func TestCommandablePropertyPriorityResolution(t *testing.T) {
 	}
 }
 
+func TestCommandablePropertyRejectsReservedPrioritySix(t *testing.T) {
+	defaultValue := Value{Tag: 4, Value: float32(18)}
+	property := &Property{ID: 85, Writable: true, RelinquishDefault: &defaultValue}
+	if err := property.Write([]Value{{Tag: 4, Value: float32(21)}}, 6); err != ErrInvalidPriority {
+		t.Fatalf("priority 6 error = %v", err)
+	}
+}
+
 func TestArrayPropertyReads(t *testing.T) {
 	property := &Property{
 		ID:    76,

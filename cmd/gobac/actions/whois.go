@@ -29,7 +29,7 @@ func Whois(ctx *cli.Context) (err error) {
 	}
 
 	for i, d := range devices {
-		fmt.Printf("%d. [ Device ID: %d ]  [ IPAddress: %s ]\n", i+1, d.ObjectId.Instance, d.IPAddress.String())
+		fmt.Printf("%d. [ Device ID: %d ]  [ IPAddress: %s ]\n", i+1, d.DeviceInstance, d.IPAddress.String())
 	}
 
 	return
@@ -51,7 +51,7 @@ func whois(duration time.Duration) (devices []*types.Device, err error) {
 
 		if dev != nil {
 			devices = append(devices, dev)
-			logVerbosef("Found a new device with instance %d at %s", dev.ObjectId.Instance, dev.IPAddress)
+			logVerbosef("Found a new device with instance %d at %s", dev.DeviceInstance, dev.IPAddress)
 		}
 
 		if !open {
@@ -68,7 +68,7 @@ func whois(duration time.Duration) (devices []*types.Device, err error) {
 	}
 
 	sort.Slice(devices, func(i, j int) bool {
-		return devices[i].DeviceID < devices[j].DeviceID
+		return devices[i].DeviceInstance < devices[j].DeviceInstance
 	})
 
 	return devices, nil

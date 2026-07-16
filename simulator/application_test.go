@@ -162,6 +162,21 @@ func TestApplicationCOVIncrement(t *testing.T) {
 	}
 }
 
+func TestApplicationPrunesExpiredSubscriberEndpoints(t *testing.T) {
+	clock := NewManualClock(time.Unix(1000, 0))
+	application := NewApplication(applicationTestDevice(), clock)
+	key := SubscriptionKey{Subscriber: "192.0.2.1:47808", ProcessID: 1, Object: ObjectID{Type: uint16(types.ObjectTypeAnalogValue), Instance: 1}}
+	application.Subscriptions.Subscribe(Subscription{Key: key, Lifetime: time.Second})
+	application.subscribers[key] = transport.NewEndpoint(net.IPv4(192, 0, 2, 1), 47808)
+	clock.Advance(2 * time.Second)
+	if active := application.activeSubscriptions(); len(active) != 0 {
+		t.Fatalf("active subscriptions = %d", len(active))
+	}
+	if len(application.subscribers) != 0 {
+		t.Fatalf("subscriber endpoints = %d", len(application.subscribers))
+	}
+}
+
 func applicationTestDevice() *Device {
 	objectID := ObjectID{Type: uint16(types.ObjectTypeAnalogValue), Instance: 1}
 	return &Device{

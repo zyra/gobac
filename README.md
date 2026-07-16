@@ -95,7 +95,7 @@ func main() {
 	}
 
 	for device := range devices {
-		fmt.Printf("device %d at %s\n", device.ObjectId.Instance, device.IPAddress)
+		fmt.Printf("device %d at %s\n", device.DeviceInstance, device.IPAddress)
 	}
 }
 ```

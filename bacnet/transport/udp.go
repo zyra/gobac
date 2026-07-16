@@ -62,6 +62,11 @@ func (c *UDPConn) Read(ctx context.Context) (Datagram, error) {
 }
 
 func (c *UDPConn) Write(ctx context.Context, destination Endpoint, payload []byte) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
 	if deadline, ok := ctx.Deadline(); ok {
 		if err := c.conn.SetWriteDeadline(deadline); err != nil {
 			return err
