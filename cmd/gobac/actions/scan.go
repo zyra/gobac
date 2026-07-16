@@ -12,6 +12,15 @@ import (
 	"github.com/zyra/gobac/v2/bacnet/types"
 )
 
+var objectProperties = func(object types.Object) ([]*types.Property, error) {
+	c := bacnet.ObjectController(object)
+	return c.GetAllProperties(server)
+}
+
+var deviceObjects = func(device types.Device) ([]*types.Object, error) {
+	return bacnet.DeviceController(device).GetObjects(server)
+}
+
 type ExtendedObject struct {
 	*types.Object
 	Properties  []*types.Property
@@ -51,10 +60,8 @@ func Scan(ctx *cli.Context) error {
 			//	color.Cyan("| Device [%d/%d] | ID: %d | IP: %s \n", i+1, len(devices), d.ObjectId.Instance, d.IPAddress.String())
 			//}
 
-			oc := bacnet.ObjectController(d.Object)
-
 			// Get all properties
-			if props, err := oc.GetAllProperties(server); err != nil {
+			if props, err := objectProperties(d.Object); err != nil {
 				log.Fatal(err)
 			} else {
 				ed.Properties = props
@@ -85,7 +92,7 @@ func Scan(ctx *cli.Context) error {
 			}
 
 			// Get all objects
-			objs, err := bacnet.DeviceController(*d).GetObjects(server)
+			objs, err := deviceObjects(*d)
 
 			if err != nil {
 				println("Error getting objects", err.Error())
@@ -105,8 +112,7 @@ func Scan(ctx *cli.Context) error {
 				go func(ii int, o *types.Object) {
 					defer objsWg.Done()
 
-					c := bacnet.ObjectController(*o)
-					if props, err := c.GetAllProperties(server); err != nil {
+					if props, err := objectProperties(*o); err != nil {
 						println("Error getting propss", err.Error())
 						log.Fatal(err)
 					} else {
