@@ -30,6 +30,7 @@ func (d *Device) Reset() {
 	d.Object.Reset()
 	d.MACAddress = nil
 	d.MaxAPDU = 0
+	d.OriginInterface = ""
 	d.VendorID = 0
 	d.Segmentation = 0
 	d.Port = 0

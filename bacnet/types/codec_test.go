@@ -229,6 +229,14 @@ func TestDevicePreservesFullInstanceNumber(t *testing.T) {
 	}
 }
 
+func TestDeviceResetClearsOriginInterface(t *testing.T) {
+	device := Device{OriginInterface: "eth0"}
+	device.Reset()
+	if device.OriginInterface != "" {
+		t.Fatalf("origin interface survived reset: %q", device.OriginInterface)
+	}
+}
+
 func TestDateStringUsesDayAndTimeRequiresExactLength(t *testing.T) {
 	if got := (Date{Year: 2026, Month: 7, Day: 16, Weekday: 4}).String(); got != "2026-07-16" {
 		t.Fatalf("date string = %q", got)
