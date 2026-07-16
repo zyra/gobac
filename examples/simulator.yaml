@@ -1,0 +1,47 @@
+version: 1
+seed: 42
+network:
+  mode: multi-port
+  interface: 127.0.0.1
+  port: 47808
+devices:
+  - id: 1001
+    port: 47808
+    name: Air Handler 1
+    vendor_id: 260
+    vendor_name: Example Controls
+    model_name: AHU Simulator
+    objects:
+      - type: analog-input
+        instance: 1
+        name: Supply Air Temperature
+        description: Supply air temperature sensor
+        present_value: 15.5
+        units: 62
+        cov_increment: 0.1
+      - type: analog-output
+        instance: 1
+        name: Cooling Valve Command
+        present_value: 35
+        units: 98
+        writable: true
+        commandable: true
+        relinquish_default: 0
+  - id: 1002
+    port: 47809
+    name: Zone Controller 1
+    vendor_id: 260
+    vendor_name: Example Controls
+    model_name: Zone Simulator
+    objects:
+      - type: analog-input
+        instance: 1
+        name: Zone Temperature
+        present_value: 22.5
+        units: 62
+        cov_increment: 0.1
+      - type: binary-value
+        instance: 1
+        name: Occupied Override
+        present_value: inactive
+        writable: true

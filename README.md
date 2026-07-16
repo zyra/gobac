@@ -10,17 +10,18 @@ The project is being refreshed with an emphasis on protocol fixtures, interopera
 - Who-Is broadcasts and I-Am response decoding
 - Confirmed ReadProperty and WriteProperty requests
 - SubscribeCOV requests and confirmed COV notification handling
+- Server-side service dispatch over pluggable UDP or in-memory transports
+- A scenario-driven BACnet/IP network simulator
 - Simple ACK, Complex ACK, Error, Reject, and Abort response decoding
 - Device and object helpers for enumerating object lists and properties
 - Encoding and decoding for the BACnet application data types currently represented in `bacnet/types`
 
 ## Current limitations
 
-- The library is currently a BACnet client. It does not expose a general server-side service handler API.
 - BBMD operation, foreign-device registration, and forwarded NPDU handling are not implemented.
 - Routed BACnet networks, BACnet/IPv6, BACnet/SC, and MS/TP are not implemented.
 - Segmented APDUs and request retries are not implemented.
-- ReadPropertyMultiple and WritePropertyMultiple are not implemented; the object helpers issue individual ReadProperty requests.
+- The client does not yet expose ReadPropertyMultiple or WritePropertyMultiple; the simulator responds to ReadPropertyMultiple.
 - The API identifies remote devices by IPv4 address and assumes the configured BACnet UDP port.
 - The CLI's `scan` command is an exploratory helper and can generate many individual requests on a large device.
 
@@ -31,6 +32,7 @@ The repository vendors its dependencies.
 ```sh
 go test -mod=vendor ./...
 go build -mod=vendor -o gobac ./cmd/gobac
+go build -mod=vendor -o gobac-sim ./cmd/gobac-sim
 ```
 
 The Docker image builds the command-line client as its entry point:
@@ -98,7 +100,22 @@ func main() {
 }
 ```
 
-Despite the historical `Server` name, the type currently acts as a BACnet/IP client and response dispatcher.
+Despite the historical `Server` name, that type acts as a BACnet/IP client and response dispatcher. New device-side applications can use `bacnet/responder` with a `bacnet/transport.Conn`.
+
+## Network simulator
+
+The standalone simulator loads a strict YAML or JSON scenario and exposes each configured device through the GoBAC responder.
+
+```sh
+go build -mod=vendor -o gobac-sim ./cmd/gobac-sim
+./gobac-sim validate examples/simulator.yaml
+./gobac-sim inspect examples/simulator.yaml
+./gobac-sim run examples/simulator.yaml
+```
+
+The initial simulator supports Who-Is/I-Am, ReadProperty, WriteProperty, ReadPropertyMultiple, SubscribeCOV, command priorities, array reads, and confirmed or unconfirmed COV notifications. See [Simulator guide](docs/simulator.md) for scenario details and current constraints.
+
+The comparison with bacnet-stack and prioritized interoperability roadmap are in [Compatibility and roadmap](docs/compatibility.md).
 
 ## Development
 

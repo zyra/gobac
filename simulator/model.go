@@ -1,0 +1,231 @@
+package simulator
+
+import (
+	"errors"
+	"fmt"
+	"sync"
+)
+
+const (
+	MaxObjectInstance = 0x3fffff
+	PrioritySlots     = 16
+)
+
+var (
+	ErrUnknownDevice     = errors.New("unknown device")
+	ErrUnknownObject     = errors.New("unknown object")
+	ErrUnknownProperty   = errors.New("unknown property")
+	ErrWriteDenied       = errors.New("write access denied")
+	ErrInvalidPriority   = errors.New("invalid priority")
+	ErrPropertyNotArray  = errors.New("property is not an array")
+	ErrInvalidArrayIndex = errors.New("invalid array index")
+)
+
+type ObjectID struct {
+	Type     uint16
+	Instance uint32
+}
+
+func (id ObjectID) String() string {
+	return fmt.Sprintf("%d:%d", id.Type, id.Instance)
+}
+
+type Value struct {
+	Tag   uint8
+	Value interface{}
+}
+
+type Property struct {
+	ID                uint32
+	Values            []Value
+	Writable          bool
+	Array             bool
+	COVIncrement      float64
+	RelinquishDefault *Value
+	priorities        [PrioritySlots]*Value
+}
+
+func (p *Property) Read(arrayIndex *uint32) ([]Value, error) {
+	if arrayIndex == nil {
+		return cloneValues(p.effectiveValues()), nil
+	}
+
+	if !p.Array {
+		return nil, ErrPropertyNotArray
+	}
+
+	values := p.effectiveValues()
+	if *arrayIndex == 0 {
+		return []Value{{Tag: 2, Value: uint32(len(values))}}, nil
+	}
+	if *arrayIndex == ^uint32(0) {
+		return cloneValues(values), nil
+	}
+	if *arrayIndex > uint32(len(values)) {
+		return nil, ErrInvalidArrayIndex
+	}
+	return []Value{cloneValue(values[*arrayIndex-1])}, nil
+}
+
+func (p *Property) Write(values []Value, priority uint8) error {
+	if !p.Writable {
+		return ErrWriteDenied
+	}
+	if len(values) == 0 {
+		return errors.New("property value is required")
+	}
+
+	if p.RelinquishDefault != nil {
+		if priority == 0 {
+			priority = PrioritySlots
+		}
+		if priority < 1 || priority > PrioritySlots {
+			return ErrInvalidPriority
+		}
+		if values[0].Tag == 0 || values[0].Value == nil {
+			p.priorities[priority-1] = nil
+		} else {
+			value := cloneValue(values[0])
+			p.priorities[priority-1] = &value
+		}
+		return nil
+	}
+
+	if priority != 0 {
+		return ErrInvalidPriority
+	}
+	p.Values = cloneValues(values)
+	return nil
+}
+
+func (p *Property) PriorityArray() [PrioritySlots]*Value {
+	var result [PrioritySlots]*Value
+	for i, value := range p.priorities {
+		if value != nil {
+			copy := cloneValue(*value)
+			result[i] = &copy
+		}
+	}
+	return result
+}
+
+func (p *Property) effectiveValues() []Value {
+	if p.RelinquishDefault == nil {
+		return p.Values
+	}
+	for _, value := range p.priorities {
+		if value != nil {
+			return []Value{*value}
+		}
+	}
+	return []Value{*p.RelinquishDefault}
+}
+
+type Object struct {
+	ID         ObjectID
+	Name       string
+	Properties map[uint32]*Property
+}
+
+type Device struct {
+	ID        uint32
+	Name      string
+	Address   string
+	Port      uint16
+	VendorID  uint16
+	ModelName string
+	Objects   map[ObjectID]*Object
+	mu        sync.RWMutex
+}
+
+func (d *Device) Object(id ObjectID) (*Object, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	object := d.Objects[id]
+	if object == nil {
+		return nil, ErrUnknownObject
+	}
+	return object, nil
+}
+
+func (d *Device) ReadProperty(id ObjectID, propertyID uint32, arrayIndex *uint32) ([]Value, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	object := d.Objects[id]
+	if object == nil {
+		return nil, ErrUnknownObject
+	}
+	property := object.Properties[propertyID]
+	if property == nil {
+		return nil, ErrUnknownProperty
+	}
+	return property.Read(arrayIndex)
+}
+
+func (d *Device) WriteProperty(id ObjectID, propertyID uint32, values []Value, priority uint8) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	object := d.Objects[id]
+	if object == nil {
+		return ErrUnknownObject
+	}
+	property := object.Properties[propertyID]
+	if property == nil {
+		return ErrUnknownProperty
+	}
+	return property.Write(values, priority)
+}
+
+type Network struct {
+	Devices map[uint32]*Device
+	mu      sync.RWMutex
+}
+
+func NewNetwork() *Network {
+	return &Network{Devices: make(map[uint32]*Device)}
+}
+
+func (n *Network) AddDevice(device *Device) error {
+	if device == nil {
+		return errors.New("device is required")
+	}
+	if device.ID > MaxObjectInstance {
+		return fmt.Errorf("device id %d exceeds BACnet object-instance range", device.ID)
+	}
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if _, exists := n.Devices[device.ID]; exists {
+		return fmt.Errorf("duplicate device id %d", device.ID)
+	}
+	if device.Objects == nil {
+		device.Objects = make(map[ObjectID]*Object)
+	}
+	n.Devices[device.ID] = device
+	return nil
+}
+
+func (n *Network) Device(id uint32) (*Device, error) {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	device := n.Devices[id]
+	if device == nil {
+		return nil, ErrUnknownDevice
+	}
+	return device, nil
+}
+
+func cloneValues(values []Value) []Value {
+	result := make([]Value, len(values))
+	for i := range values {
+		result[i] = cloneValue(values[i])
+	}
+	return result
+}
+
+func cloneValue(value Value) Value {
+	if bytes, ok := value.Value.([]byte); ok {
+		copy := append([]byte(nil), bytes...)
+		value.Value = copy
+	}
+	return value
+}
