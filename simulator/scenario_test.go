@@ -83,12 +83,16 @@ devices:
     objects:
       - type: multi-state-value
         instance: 1
-		name: state
-		number_of_states: 3
-		present_value: 4294967297
+        name: state
+        number_of_states: 3
+        present_value: 4294967297
 `
-	if _, err := DecodeScenario(strings.NewReader(input), "yaml"); err == nil {
+	_, err := DecodeScenario(strings.NewReader(input), "yaml")
+	if err == nil {
 		t.Fatal("overflowing present value was accepted")
+	}
+	if !strings.Contains(err.Error(), "exceeds the unsigned 32-bit range") {
+		t.Fatalf("expected uint32 overflow error, got: %v", err)
 	}
 }
 
