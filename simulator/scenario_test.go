@@ -12,7 +12,6 @@ import (
 func TestDecodeAndBuildYAMLScenario(t *testing.T) {
 	input := `
 version: 1
-seed: 42
 network:
   mode: multi-ip
   port: 47808
@@ -170,6 +169,17 @@ func TestDecodeScenarioRejectsUnknownFields(t *testing.T) {
 	_, err := DecodeScenario(strings.NewReader("version: 1\nunknown: true\ndevices: []\n"), "yaml")
 	if err == nil {
 		t.Fatal("expected strict YAML decoding error")
+	}
+}
+
+func TestDecodeScenarioRejectsSeedField(t *testing.T) {
+	input := "version: 1\nseed: 42\nnetwork:\n  mode: single-device\ndevices:\n  - id: 1\n    name: device\n"
+	_, err := DecodeScenario(strings.NewReader(input), "yaml")
+	if err == nil {
+		t.Fatal("scenario with a seed field was accepted")
+	}
+	if !strings.Contains(err.Error(), "seed") {
+		t.Fatalf("expected unknown-field error mentioning seed, got: %v", err)
 	}
 }
 

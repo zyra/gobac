@@ -1,5 +1,4 @@
 version: 1
-seed: 42
 network:
   mode: multi-port
   interface: 127.0.0.1
