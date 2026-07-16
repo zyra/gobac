@@ -5,8 +5,9 @@ import (
 	"encoding"
 	"errors"
 	"fmt"
-	"github.com/zyra/gobac/bacnet/types"
 	"net"
+
+	"github.com/zyra/gobac/bacnet/types"
 )
 
 type Apdu struct {
@@ -24,6 +25,7 @@ type Apdu struct {
 
 	RequestData  encoding.BinaryMarshaler
 	ResponseData encoding.BinaryUnmarshaler
+	Payload      []byte
 
 	Errored    bool
 	ErrorClass types.ErrorClass
@@ -35,30 +37,12 @@ type Apdu struct {
 	Rejected     bool
 	RejectReason types.RejectReason
 
-	SenderIP net.IP
+	SenderIP   net.IP
 	BacnetPort uint16
 }
 
 func (a *Apdu) Reset() {
-	a.PduType = 0
-	a.InvokeID = 0
-	a.MaxSegments = 0
-	a.MaxApdu = 0
-	a.Segmented = false
-	//a.MoreFollows = false
-	//a.SequenceNumber = 0
-	//a.ProposedWindowSize = 0
-	a.ServiceChoice = 0
-	a.Failed = false
-
-	a.RequestData = nil
-	a.ResponseData = nil
-
-	a.Errored = false
-	a.Aborted = false
-	a.Rejected = false
-	a.SenderIP = nil
-	a.BacnetPort = 0
+	*a = Apdu{}
 }
 
 func (a *Apdu) GetPduType() uint8 {
@@ -69,239 +53,318 @@ func (a *Apdu) SetPduType(t uint8) {
 	a.PduType = types.PduType(t)
 }
 
-func (a *Apdu) MarshalBinary() (b []byte, e error) {
-	buff := buffPool.Get().(*bytes.Buffer)
-	buff.WriteByte(byte(a.PduType))
-	defer buff.Reset()
-	defer buffPool.Put(buff)
-
-	// write invoke ID if we have one
-	if a.InvokeID > 0 {
-		// Write max segments & max APDU
-		// TODO change this if segmentation becomes supported
-		e = buff.WriteByte(5)
-
-		e = buff.WriteByte(byte(a.InvokeID))
+func maxSegmentsCode(value types.MaxSegments) (byte, error) {
+	switch value {
+	case 0:
+		return 0, nil
+	case 2:
+		return 1, nil
+	case 4:
+		return 2, nil
+	case 8:
+		return 3, nil
+	case 16:
+		return 4, nil
+	case 32:
+		return 5, nil
+	case 64:
+		return 6, nil
+	case 65:
+		return 7, nil
+	default:
+		return 0, fmt.Errorf("invalid max segments value: %d", value)
 	}
-
-	// write service choice
-	e = buff.WriteByte(byte(a.ServiceChoice))
-
-	if a.RequestData != nil {
-		if b, e := a.RequestData.MarshalBinary(); e != nil {
-			return nil, e
-		} else {
-			_, e = buff.Write(b)
-		}
-	}
-
-	if e != nil {
-		return nil, e
-	}
-
-	return buff.Bytes(), e
 }
 
-func (a *Apdu) UnmarshalBinary(b []byte) (e error) {
-	buff := buffPool.Get().(*bytes.Buffer)
-	buff.Write(b)
-	defer buff.Reset()
-	defer buffPool.Put(buff)
+func maxApduCode(value types.MaxApduValue) (byte, error) {
+	switch value {
+	case 50:
+		return 0, nil
+	case 128:
+		return 1, nil
+	case 206:
+		return 2, nil
+	case 480:
+		return 3, nil
+	case 1024:
+		return 4, nil
+	case 1476:
+		return 5, nil
+	default:
+		return 0, fmt.Errorf("invalid max APDU value: %d", value)
+	}
+}
 
-	magicByte, e := buff.ReadByte()
+func (a *Apdu) MarshalBinary() ([]byte, error) {
+	buff := bytes.NewBuffer(nil)
+	pduType := a.PduType & 0xf0
+	first := byte(a.PduType)
 
-	if e != nil {
-		return e
+	switch pduType {
+	case types.PduTypeConfirmedServiceRequest:
+		if a.Segmented {
+			return nil, errors.New("segmented messages are not supported")
+		}
+		segments, err := maxSegmentsCode(a.MaxSegments)
+		if err != nil {
+			return nil, err
+		}
+		maxApdu, err := maxApduCode(a.MaxApdu)
+		if err != nil {
+			return nil, err
+		}
+		buff.WriteByte(first)
+		buff.WriteByte(segments<<4 | maxApdu)
+		buff.WriteByte(a.InvokeID)
+		buff.WriteByte(a.ServiceChoice)
+	case types.PduTypeUnconfirmedServiceRequest:
+		buff.WriteByte(first)
+		buff.WriteByte(a.ServiceChoice)
+	case types.PduTypeSimpleAck:
+		buff.WriteByte(first)
+		buff.WriteByte(a.InvokeID)
+		buff.WriteByte(a.ServiceChoice)
+	case types.PduTypeComplexAck:
+		if a.Segmented {
+			return nil, errors.New("segmented messages are not supported")
+		}
+		buff.WriteByte(first)
+		buff.WriteByte(a.InvokeID)
+		buff.WriteByte(a.ServiceChoice)
+	case types.PduTypeError:
+		buff.WriteByte(first)
+		buff.WriteByte(a.InvokeID)
+		buff.WriteByte(a.ServiceChoice)
+		for _, value := range []uint32{uint32(a.ErrorClass), uint32(a.ErrorCode)} {
+			encoded := types.EncodeVarUint(value)
+			tag := types.Tag{TagNumber: types.TagEnumerated, LenValue: len(encoded)}
+			buff.Write(tag.EncodeTag())
+			buff.Write(encoded)
+		}
+	case types.PduTypeReject:
+		buff.WriteByte(first)
+		buff.WriteByte(a.InvokeID)
+		buff.WriteByte(byte(a.RejectReason))
+	case types.PduTypeAbort:
+		buff.WriteByte(first)
+		buff.WriteByte(a.InvokeID)
+		buff.WriteByte(byte(a.AbortReason))
+	default:
+		return nil, fmt.Errorf("unsupported pdu type: %d", pduType)
 	}
 
-	a.PduType = types.PduType(magicByte & 0xF0)
+	if pduType == types.PduTypeConfirmedServiceRequest ||
+		pduType == types.PduTypeUnconfirmedServiceRequest || pduType == types.PduTypeComplexAck {
+		if a.RequestData != nil {
+			data, err := a.RequestData.MarshalBinary()
+			if err != nil {
+				return nil, err
+			}
+			buff.Write(data)
+		} else if len(a.Payload) > 0 {
+			buff.Write(a.Payload)
+		}
+	}
 
+	return buff.Bytes(), nil
+}
+
+func (a *Apdu) UnmarshalBinary(b []byte) error {
+	if len(b) == 0 {
+		return errors.New("APDU is empty")
+	}
+	senderIP, port := a.SenderIP, a.BacnetPort
+	a.Reset()
+	a.SenderIP, a.BacnetPort = senderIP, port
+	offset := 1
+	readByte := func() (byte, error) {
+		if offset >= len(b) {
+			return 0, errors.New("APDU is truncated")
+		}
+		value := b[offset]
+		offset++
+		return value, nil
+	}
+
+	first := b[0]
+	a.PduType = types.PduType(first & 0xf0)
 	switch a.PduType {
 	case types.PduTypeUnconfirmedServiceRequest:
-		defer a.decodeUnconfirmedApdu(buff, &e)
-		break
-
-	case types.PduTypeSegmentAck:
-		a.Failed = true
-		return errors.New("segmented messages are not supported")
-
-	case types.PduTypeConfirmedServiceRequest:
-		if segmented := magicByte & types.BIT3; segmented != 0 {
-			a.Segmented = true
-
-			if x := magicByte & types.BIT2; x != 0 {
-				a.MoreFollows = true
-			}
-			a.Failed = true
-			return errors.New("segmented messages are not supported")
-		}
-
-		magicByte2, err := buff.ReadByte()
-
+		service, err := readByte()
 		if err != nil {
 			return err
 		}
+		a.ServiceChoice = service
+		a.Payload = append([]byte(nil), b[offset:]...)
+		return a.decodeUnconfirmedApdu(b[offset:])
 
-		if e := a.MaxSegments.UnmarshalBinary([]byte{magicByte2}); e != nil {
-			return e
-		}
-
-		if e := a.MaxApdu.UnmarshalBinary([]byte{magicByte2}); e != nil {
-			return e
-		}
-
-		if b, e := buff.ReadByte(); e != nil {
-			return e
-		} else {
-			a.InvokeID = b
-		}
-		defer a.decodeConfirmedApdu(buff, &e)
-		break
-
-	case types.PduTypeSimpleAck:
-		if b, e := buff.ReadByte(); e != nil {
-			return e
-		} else {
-			a.InvokeID = b
-		}
-		break
-
-	case types.PduTypeComplexAck:
-		if b, e := buff.ReadByte(); e != nil {
-			return e
-		} else {
-			a.InvokeID = b
-		}
-
-		if segmented := magicByte & types.BIT3; segmented != 0 {
+	case types.PduTypeConfirmedServiceRequest:
+		if first&types.BIT3 != 0 {
 			a.Segmented = true
-
-			if b, e := buff.ReadByte(); e != nil {
-				return e
-			} else {
-				a.SequenceNumber = b
-			}
-
-			if b, e := buff.ReadByte(); e != nil {
-				return e
-			} else {
-				a.ProposedWindowSize = b
-			}
-
+			a.MoreFollows = first&types.BIT2 != 0
 			a.Failed = true
 			return errors.New("segmented messages are not supported")
 		}
+		maximums, err := readByte()
+		if err != nil {
+			return err
+		}
+		if err := a.MaxSegments.UnmarshalBinary([]byte{maximums}); err != nil {
+			return err
+		}
+		if err := a.MaxApdu.UnmarshalBinary([]byte{maximums}); err != nil {
+			return err
+		}
+		invokeID, err := readByte()
+		if err != nil {
+			return err
+		}
+		a.InvokeID = invokeID
+		service, err := readByte()
+		if err != nil {
+			return err
+		}
+		a.ServiceChoice = service
+		a.Payload = append([]byte(nil), b[offset:]...)
+		return a.decodeConfirmedApdu(b[offset:])
 
-		defer a.decodeConfirmedApdu(buff, &e)
-		break
+	case types.PduTypeSimpleAck:
+		invokeID, err := readByte()
+		if err != nil {
+			return err
+		}
+		a.InvokeID = invokeID
+		service, err := readByte()
+		if err != nil {
+			return err
+		}
+		a.ServiceChoice = service
+		return nil
+
+	case types.PduTypeComplexAck:
+		invokeID, err := readByte()
+		if err != nil {
+			return err
+		}
+		a.InvokeID = invokeID
+		if first&types.BIT3 != 0 {
+			a.Segmented = true
+			a.MoreFollows = first&types.BIT2 != 0
+			sequence, err := readByte()
+			if err != nil {
+				return err
+			}
+			a.SequenceNumber = sequence
+			window, err := readByte()
+			if err != nil {
+				return err
+			}
+			a.ProposedWindowSize = window
+			a.Failed = true
+			return errors.New("segmented messages are not supported")
+		}
+		service, err := readByte()
+		if err != nil {
+			return err
+		}
+		a.ServiceChoice = service
+		a.Payload = append([]byte(nil), b[offset:]...)
+		return a.decodeConfirmedApdu(b[offset:])
 
 	case types.PduTypeError:
 		a.Failed = true
 		a.Errored = true
-
-		if b, e := buff.ReadByte(); e != nil {
-			return e
-		} else {
-			a.InvokeID = b
+		invokeID, err := readByte()
+		if err != nil {
+			return err
 		}
-
-		if b, e := buff.ReadByte(); e != nil {
-			return e
-		} else {
-			a.ServiceChoice = b
+		a.InvokeID = invokeID
+		service, err := readByte()
+		if err != nil {
+			return err
 		}
-
-		t := &types.Tag{}
-
-		buff.Next(t.DecodeTag(buff.Bytes()))
-
-		if e := a.ErrorClass.UnmarshalBinary(buff.Next(t.LenValue)); e != nil {
-			return e
+		a.ServiceChoice = service
+		values := []*uint32{new(uint32), new(uint32)}
+		for _, value := range values {
+			if offset >= len(b) {
+				return errors.New("error APDU is truncated")
+			}
+			tag := &types.Tag{}
+			headerLength := tag.DecodeTag(b[offset:])
+			if headerLength == 0 || tag.Context || tag.TagNumber != types.TagEnumerated || tag.Opening || tag.Closing || tag.LenValue < 1 || tag.LenValue > 4 {
+				return errors.New("error APDU contains an invalid tag")
+			}
+			if len(b)-offset-headerLength < tag.LenValue {
+				return errors.New("error APDU value is truncated")
+			}
+			offset += headerLength
+			*value = types.DecodeVarUint(b[offset : offset+tag.LenValue])
+			offset += tag.LenValue
 		}
-
-		buff.Next(t.DecodeTag(buff.Bytes()))
-
-		if e := a.ErrorCode.UnmarshalBinary(buff.Next(t.LenValue)); e != nil {
-			return e
-		}
+		a.ErrorClass = types.ErrorClass(*values[0])
+		a.ErrorCode = types.ErrorCode(*values[1])
 		return nil
 
 	case types.PduTypeReject:
 		a.Failed = true
-		if b, e := buff.ReadByte(); e != nil {
-			return e
-		} else {
-			a.InvokeID = uint8(b)
-		}
-
 		a.Rejected = true
-
-		if b, e := buff.ReadByte(); e != nil {
-			return e
-		} else {
-			a.RejectReason = types.RejectReason(b)
+		invokeID, err := readByte()
+		if err != nil {
+			return err
 		}
-
-		if buff.Len() == 0 {
-			return nil
+		a.InvokeID = invokeID
+		reason, err := readByte()
+		if err != nil {
+			return err
 		}
-		break
+		a.RejectReason = types.RejectReason(reason)
+		return nil
 
 	case types.PduTypeAbort:
 		a.Failed = true
-
-		if b, e := buff.ReadByte(); e != nil {
-			return e
-		} else {
-			a.InvokeID = uint8(b & types.BIT0)
-		}
-
 		a.Aborted = true
-
-		if b, e := buff.ReadByte(); e != nil {
-			return e
-		} else {
-			a.AbortReason = types.AbortReason(b)
+		invokeID, err := readByte()
+		if err != nil {
+			return err
 		}
-		break
+		a.InvokeID = invokeID
+		reason, err := readByte()
+		if err != nil {
+			return err
+		}
+		a.AbortReason = types.AbortReason(reason)
+		return nil
 
+	case types.PduTypeSegmentAck:
+		a.Failed = true
+		return errors.New("segmented messages are not supported")
 	default:
 		return fmt.Errorf("unsupported pdu type: %d", a.PduType)
 	}
-
-	if b, e := buff.ReadByte(); e != nil {
-		return e
-	} else {
-		a.ServiceChoice = uint8(b)
-	}
-
-	return e
 }
 
-func (a *Apdu) decodeConfirmedApdu(buff *bytes.Buffer, err *error) {
+func (a *Apdu) decodeConfirmedApdu(data []byte) error {
 	switch a.ServiceChoice {
 	case types.ConfirmedServiceReadProperty:
-		res := &ReadPropertyPdu{}
-		a.ResponseData = res
-		*err = a.ResponseData.UnmarshalBinary(buff.Bytes())
-		return
-
+		response := &ReadPropertyPdu{RequireValue: a.PduType == types.PduTypeComplexAck}
+		a.ResponseData = response
+		return response.UnmarshalBinary(data)
 	case types.ConfirmedServiceCovNotification:
-		res := &CovNotification{}
-		a.ResponseData = res
-		*err = a.ResponseData.UnmarshalBinary(buff.Bytes())
-		return
+		response := &CovNotification{}
+		a.ResponseData = response
+		return response.UnmarshalBinary(data)
 	}
+	return nil
 }
 
-func (a *Apdu) decodeUnconfirmedApdu(buff *bytes.Buffer, err *error) {
+func (a *Apdu) decodeUnconfirmedApdu(data []byte) error {
 	switch a.ServiceChoice {
 	case types.UnconfirmedServiceIAm:
-		res := types.NewDevice()
-		res.IPAddress = a.SenderIP
-		res.Port = a.BacnetPort
-		a.ResponseData = res
-		*err = res.UnmarshalBinary(buff.Bytes())
-		return
+		response := types.NewDevice()
+		response.IPAddress = a.SenderIP
+		response.Port = a.BacnetPort
+		a.ResponseData = response
+		return response.UnmarshalBinary(data)
 	}
+	return nil
 }

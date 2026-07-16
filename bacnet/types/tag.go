@@ -39,124 +39,116 @@ func (ct *Tag) Isnt(n uint8) bool {
 }
 
 func (ct *Tag) Reset() {
-	ct.TagNumber = 0
-	ct.LenValue = 0
+	*ct = Tag{}
 }
 
-func (ct *Tag) encodeTagCommonBase(b []byte) {
+func (ct *Tag) encodeTag(first byte, constructed bool) []byte {
+	b := make([]byte, 1, 7)
+	b[0] = first
 	if ct.TagNumber <= 14 {
 		b[0] |= byte(ct.TagNumber) << 4
 	} else {
-		if len(b) == 1 {
-			b = append(b, byte(0))
-		}
-
-		b[0] |= 0xF0
-		b[1] = byte(ct.TagNumber)
+		b[0] |= 0xf0
+		b = append(b, byte(ct.TagNumber))
 	}
-}
 
-func (ct *Tag) encodeTagCommonExtended(b []byte) {
+	if constructed {
+		return b
+	}
+	if ct.LenValue < 0 || uint64(ct.LenValue) > uint64(^uint32(0)) {
+		return nil
+	}
 	if ct.LenValue <= 4 {
 		b[0] |= byte(ct.LenValue)
-		return
+		return b
 	}
 
-	if len(b) == 1 {
-		b = append(b, byte(0))
+	b[0] |= 5
+	switch {
+	case ct.LenValue <= 253:
+		b = append(b, byte(ct.LenValue))
+	case ct.LenValue <= 65535:
+		b = append(b, 254, byte(ct.LenValue>>8), byte(ct.LenValue))
+	default:
+		value := uint32(ct.LenValue)
+		b = append(b, 255, byte(value>>24), byte(value>>16), byte(value>>8), byte(value))
 	}
-
-	if ct.LenValue <= 253 {
-		b[1] = byte(ct.LenValue)
-	} else if ct.LenValue <= 65535 {
-		b[1] = 254
-		copy(b[2:], EncodeVarUint(uint32(ct.LenValue)))
-	} else {
-		b[1] = 255
-		copy(b[2:], EncodeVarUint(uint32(ct.LenValue)))
-	}
-}
-
-func (ct *Tag) encodeContextTag() (b []byte) {
-	b = []byte{0x08}
-	ct.encodeTagCommonBase(b)
 	return b
 }
 
-func (ct *Tag) EncodeOpeningTag() (b []byte) {
-	b = ct.encodeContextTag()
-	b[0] |= 6
-	return b
+func (ct *Tag) EncodeOpeningTag() []byte {
+	return ct.encodeTag(0x08|6, true)
 }
 
-func (ct *Tag) EncodeClosingTag() (b []byte) {
-	b = ct.encodeContextTag()
-	b[0] |= 7
-	return b
+func (ct *Tag) EncodeClosingTag() []byte {
+	return ct.encodeTag(0x08|7, true)
 }
 
-func (ct *Tag) EncodeContextTag() (b []byte) {
-	b = ct.encodeContextTag()
-	ct.encodeTagCommonExtended(b)
-	return b
+func (ct *Tag) EncodeContextTag() []byte {
+	return ct.encodeTag(0x08, false)
 }
 
-func (ct *Tag) EncodeTag() (b []byte) {
-	b = []byte{0}
-	ct.encodeTagCommonBase(b)
-	ct.encodeTagCommonExtended(b)
-	return b
+func (ct *Tag) EncodeTag() []byte {
+	return ct.encodeTag(0, false)
 }
 
-func (ct *Tag) DecodeTag(b []byte) (bytesRead int) {
+// DecodeTag decodes a BACnet tag header and returns its encoded length. A
+// zero return value indicates a truncated or malformed header.
+func (ct *Tag) DecodeTag(b []byte) int {
+	ct.Reset()
 	if len(b) == 0 {
 		return 0
 	}
 
-	ct.Context = b[0]&BIT3 == BIT3
-
-	bytesRead = 1
-
-	if b[0]&0xF0 == 0xF0 {
-		bytesRead++
-		ct.TagNumber = b[1]
+	first := b[0]
+	ct.Context = first&BIT3 != 0
+	index := 1
+	if first&0xf0 == 0xf0 {
+		if len(b) <= index {
+			ct.Reset()
+			return 0
+		}
+		ct.TagNumber = b[index]
+		ct.Extended = true
+		index++
 	} else {
-		ct.TagNumber = b[0] >> 4
+		ct.TagNumber = first >> 4
 	}
 
-	switch b[0] & 0x07 {
+	switch first & 0x07 {
 	case 5:
 		ct.Extended = true
-		switch b[1] {
-		case 255:
-			v := Uint32(0)
-			_ = v.UnmarshalBinary(b[bytesRead:])
-			ct.LenValue = int(v)
-			bytesRead += 4
-			break
-		case 254:
-			v := Uint16(0)
-			_ = v.UnmarshalBinary(b[bytesRead:])
-			ct.LenValue = int(v)
-			bytesRead += 2
-			break
-		default:
-			ct.LenValue = int(b[bytesRead])
-			bytesRead++
+		if len(b) <= index {
+			ct.Reset()
+			return 0
 		}
-		break
-
+		marker := b[index]
+		index++
+		switch marker {
+		case 255:
+			if len(b)-index < 4 {
+				ct.Reset()
+				return 0
+			}
+			ct.LenValue = int(uint32(b[index])<<24 | uint32(b[index+1])<<16 | uint32(b[index+2])<<8 | uint32(b[index+3]))
+			index += 4
+		case 254:
+			if len(b)-index < 2 {
+				ct.Reset()
+				return 0
+			}
+			ct.LenValue = int(uint16(b[index])<<8 | uint16(b[index+1]))
+			index += 2
+		default:
+			ct.LenValue = int(marker)
+		}
 	case 6:
 		ct.Opening = true
-		break
-
 	case 7:
 		ct.Closing = true
-		break
-
 	default:
-		ct.LenValue = int(uint32(b[0]) & 0x07)
+		ct.LenValue = int(first & 0x07)
 	}
 
-	return bytesRead
+	return index
 }

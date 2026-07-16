@@ -12,6 +12,7 @@ type Property struct {
 	ObjectId  *ObjectId
 	ID        PropertyId
 	Index     uint32
+	HasIndex  bool
 	Values    []*PropertyValue
 	Length    int
 }
@@ -29,223 +30,185 @@ func (p *Property) ReadValuesAsObjects() []*Object {
 	return dest
 }
 
-func (p *Property) MarshalBinary() (b []byte, err error) {
-	buff := bytes.NewBuffer([]byte{})
-
-	t := GetTag()
-	defer t.Release()
+func (p *Property) MarshalBinary() ([]byte, error) {
+	buff := bytes.NewBuffer(nil)
+	tag := GetTag()
+	defer tag.Release()
 
 	if p.ObjectId != nil {
-		// encode object ID
-		t.TagNumber = 0
-		t.LenValue = 4
-		if _, err = buff.Write(t.EncodeContextTag()); err != nil {
+		tag.TagNumber = 0
+		tag.LenValue = 4
+		buff.Write(tag.EncodeContextTag())
+		objectID, err := p.ObjectId.MarshalBinary()
+		if err != nil {
 			return nil, err
 		}
-
-		objIdBytes, err := p.ObjectId.MarshalBinary()
-
-		if _, err = buff.Write(objIdBytes); err != nil {
-			return nil, err
-		}
+		buff.Write(objectID)
 	}
 
-	t.TagNumber = 1
-	t.LenValue = GetUintLen(uint(p.ID))
+	propertyID := EncodeVarUint(p.ID)
+	tag.TagNumber = 1
+	tag.LenValue = len(propertyID)
+	buff.Write(tag.EncodeContextTag())
+	buff.Write(propertyID)
 
-	// write property ID tag
-	if _, e := buff.Write(t.EncodeContextTag()); e != nil {
-		return nil, e
+	// Zero was historically the default and meant that no index was encoded.
+	// HasIndex makes the valid array index zero expressible without changing
+	// existing callers; non-zero indexes continue to work without the flag.
+	if p.HasIndex || (p.Index != 0 && p.Index != BacnetArrayAll) {
+		index := EncodeVarUint(p.Index)
+		tag.TagNumber = 2
+		tag.LenValue = len(index)
+		buff.Write(tag.EncodeContextTag())
+		buff.Write(index)
 	}
 
-	// write property ID
-	if _, e := buff.Write(EncodeVarUint(p.ID)); e != nil {
-		return nil, e
-	}
-
-	if p.Values != nil && len(p.Values) > 0 {
-		// set index if property is an array
-		if isPropArray(p.ID) {
-			t.TagNumber = 2
-			t.LenValue = GetUintLen(uint(p.Index))
-			if _, err = buff.Write(t.EncodeContextTag()); err != nil {
+	if len(p.Values) > 0 {
+		tag.TagNumber = 3
+		buff.Write(tag.EncodeOpeningTag())
+		for _, value := range p.Values {
+			if value == nil {
+				return nil, errors.New("property contains a nil value")
+			}
+			encoded, err := value.MarshalBinary()
+			if err != nil {
 				return nil, err
 			}
-			if _, err = buff.Write(EncodeVarUint(p.Index)); err != nil {
-				return nil, err
-			}
+			buff.Write(encoded)
 		}
-
-		// opening tag
-		t.TagNumber = 3
-		t.LenValue = 0
-
-		if _, err = buff.Write(t.EncodeOpeningTag()); err != nil {
-			return nil, err
-		}
-
-		// write property value
-		if b, err := p.Values[0].MarshalBinary(); err != nil {
-			return nil, err
-		} else {
-			if _, err = buff.Write(b); err != nil {
-				return nil, err
-			}
-		}
-
-		// closing tag
-		if _, err = buff.Write(t.EncodeClosingTag()); err != nil {
-			return nil, err
-		}
+		buff.Write(tag.EncodeClosingTag())
 	}
 
 	return buff.Bytes(), nil
 }
 
-func (p *Property) UnmarshalBinary(b []byte) (err error) {
-	if b == nil {
-		return errors.New("received a nil byte slice")
-	}
-
+func (p *Property) UnmarshalBinary(b []byte) error {
 	if len(b) == 0 {
 		return errors.New("received an empty byte slice")
 	}
 
-	var tagStart uint8
-	var full bool
-	var buff *bytes.Buffer
-
-	buff = GetBuff(b...)
-	defer ReleaseBuff(buff)
-
-	full = p.ObjectId == nil
-
-	t := GetTag()
-	defer t.Release()
-	tagStart = uint8(0)
+	full := p.ObjectId == nil
+	tagStart := uint8(0)
+	offset := 0
+	decode := func() (*Tag, int, error) {
+		if offset >= len(b) {
+			return nil, 0, errors.New("unexpected end of property data")
+		}
+		tag := &Tag{}
+		headerLength := tag.DecodeTag(b[offset:])
+		if headerLength == 0 {
+			return nil, 0, errors.New("malformed property tag")
+		}
+		return tag, headerLength, nil
+	}
+	readValue := func(tag *Tag, headerLength int) ([]byte, error) {
+		if tag.LenValue < 0 || len(b)-offset-headerLength < tag.LenValue {
+			return nil, errors.New("property value is truncated")
+		}
+		start := offset + headerLength
+		offset = start + tag.LenValue
+		return b[start:offset], nil
+	}
 
 	if full {
-		// ObjectID is typically left marshaled
-		// except for cov notifications
-		// since the format there is different
-		// and the response might have multiple properties
-		// probably will be the case for read-property-multiple (not implemented)
-
-		//
-		// Decode Object ID
-		//
-		buff.Next(t.DecodeTag(buff.Bytes()))
-
-		if !t.IsContext(0) {
-			return errors.New("unexpected tag number")
-		}
-
-		tagStart = 1
-
-		p.ObjectId = &ObjectId{}
-
-		if err = p.ObjectId.UnmarshalBinary(buff.Next(t.LenValue)); err != nil {
+		tag, headerLength, err := decode()
+		if err != nil {
 			return err
 		}
+		if !tag.IsContext(0) || tag.Opening || tag.Closing || tag.LenValue != 4 {
+			return errors.New("unexpected object identifier tag")
+		}
+		value, err := readValue(tag, headerLength)
+		if err != nil {
+			return err
+		}
+		p.ObjectId = &ObjectId{}
+		if err := p.ObjectId.UnmarshalBinary(value); err != nil {
+			return err
+		}
+		tagStart = 1
 	}
 
-	//
-	// Decode Property ID
-	//
-	buff.Next(t.DecodeTag(buff.Bytes()))
+	tag, headerLength, err := decode()
+	if err != nil {
+		return err
+	}
+	if !tag.IsContext(tagStart) || tag.Opening || tag.Closing || tag.LenValue < 1 || tag.LenValue > 4 {
+		return errors.New("unexpected property identifier tag")
+	}
+	value, err := readValue(tag, headerLength)
+	if err != nil {
+		return err
+	}
+	p.ID = DecodeVarUint(value)
+	p.Index = math.MaxUint32
+	p.HasIndex = false
 
-	if !t.IsContext(tagStart) {
-		return errors.New("unexpected tag number")
+	if offset < len(b) {
+		tag, headerLength, err = decode()
+		if err != nil {
+			return err
+		}
+		if tag.IsContext(tagStart+1) && !tag.Opening && !tag.Closing {
+			if tag.LenValue < 1 || tag.LenValue > 4 {
+				return errors.New("invalid property array index length")
+			}
+			value, err = readValue(tag, headerLength)
+			if err != nil {
+				return err
+			}
+			p.Index = DecodeVarUint(value)
+			p.HasIndex = true
+		}
 	}
 
-	p.ID = DecodeVarUint(buff.Next(t.LenValue))
-
-	//
-	// Decode array index
-	//
-	r := t.DecodeTag(buff.Bytes())
-
-	if !t.IsContext(tagStart + 1) {
-		p.Index = math.MaxUint32
-	} else {
-		// mark bytes as read
-		buff.Next(r)
-
-		// decode index
-		p.Index = DecodeVarUint(buff.Next(t.LenValue))
+	// A ReadProperty request ends after its optional array index. A response or
+	// WriteProperty request continues with the constructed property value.
+	if offset == len(b) {
+		p.Values = nil
+		p.Length = offset
+		return nil
 	}
 
-	// Check opening tag
-	buff.Next(t.DecodeTag(buff.Bytes()))
-
-	if !t.IsContext(tagStart + 2) {
-		return errors.New("unexpected tag number")
+	tag, headerLength, err = decode()
+	if err != nil {
+		return err
 	}
+	if !tag.IsContext(tagStart+2) || !tag.Opening {
+		return errors.New("expected opening property value tag")
+	}
+	offset += headerLength
 
-	var l int
-	var values []*PropertyValue
-
-	for buff.Len() > 1 {
-		//b := buff.Bytes()[0]
-		//
-		//if b&0x08 == 0x08 {
-		//	// Context specific tag ahead
-		//	// break the loop!
-		//	break
-		//}
-
-		r = t.DecodeTag(buff.Bytes())
-		if t.Context {
+	values := make([]*PropertyValue, 0, 1)
+	for {
+		tag, headerLength, err = decode()
+		if err != nil {
+			return err
+		}
+		if tag.IsContext(tagStart+2) && tag.Closing {
+			offset += headerLength
 			break
 		}
-
-		val := PropertyValue{}
-
-		l, r = val.ValueLength(buff.Bytes())
-
-		if err = val.UnmarshalBinary(buff.Next(r + l)); err != nil {
+		if tag.Context || tag.Opening || tag.Closing {
+			return errors.New("unexpected context tag in property value")
+		}
+		payloadLength := tag.LenValue
+		if tag.TagNumber == TagNull || tag.TagNumber == TagBoolean {
+			payloadLength = 0
+		}
+		if payloadLength < 0 || len(b)-offset-headerLength < payloadLength {
+			return errors.New("property value is truncated")
+		}
+		encodedLength := headerLength + payloadLength
+		propertyValue := &PropertyValue{}
+		if err := propertyValue.UnmarshalBinary(b[offset : offset+encodedLength]); err != nil {
 			return err
 		}
-		values = append(values, &val)
-	}
-
-	// Check closing tag
-	r = t.DecodeTag(buff.Bytes())
-
-	if !t.IsContext(tagStart + 2) {
-		return errors.New("unexpected tag number")
-	} else if full {
-		buff.Next(r)
+		values = append(values, propertyValue)
+		offset += encodedLength
 	}
 
 	p.Values = values
-	p.Length = len(b) - buff.Len()
-
-	return
-}
-
-func isPropArray(id PropertyId) bool {
-	switch id {
-	case PropertyPriorityArray,
-		PropertyEventTimeStamps,
-		PropertyAction,
-		PropertyObjectList,
-		PropertyListOfObjectPropertyReferences,
-		PropertyNegativeAccessRules,
-		PropertyPositiveAccessRules,
-		PropertyShedLevelDescriptions,
-		PropertyShedLevels,
-		PropertyAccessDoors,
-		PropertyAuthenticationFactors,
-		PropertyAssignedAccessRights,
-		PropertySupportedFormatClasses,
-		PropertySupportedFormats,
-		PropertyStateChangeValues,
-		PropertySubordinateNodeTypes,
-		PropertyProtocolObjectTypesSupported,
-		PropertyWeeklySchedule:
-		return true
-	default:
-		return false
-	}
+	p.Length = offset
+	return nil
 }

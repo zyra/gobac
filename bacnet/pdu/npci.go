@@ -139,15 +139,12 @@ func (n *Npci) UnmarshalBinary(b []byte) error {
 			n.DestinationLength = b
 
 			if destLen > 0 {
-				if b := buff.Next(destLen); len(b) == destLen {
-					destMac := make(net.HardwareAddr, destLen)
-
-					for i := 0; i < destLen; i++ {
-						destMac[i] = b[i]
-					}
-
-					n.DestinationMAC = &destMac
+				address := buff.Next(destLen)
+				if len(address) != destLen {
+					return errSliceTooShort
 				}
+				destMac := append(net.HardwareAddr(nil), address...)
+				n.DestinationMAC = &destMac
 			}
 		}
 
@@ -179,17 +176,12 @@ func (n *Npci) UnmarshalBinary(b []byte) error {
 			n.SourceLength = b
 
 			if srcLen > 0 {
-				if b := buff.Next(srcLen); len(b) == srcLen {
-					srcMac := make(net.HardwareAddr, srcLen)
-
-					for i := 0; i < srcLen; i++ {
-						srcMac[i] = b[i]
-					}
-
-					n.SourceMAC = &srcMac
-
-					//n.SourceIP = []net.IP{n.SourceMAC[0], n.SourceMAC[1], n.SourceMAC[2], n.SourceMAC[3]}
+				address := buff.Next(srcLen)
+				if len(address) != srcLen {
+					return errSliceTooShort
 				}
+				srcMac := append(net.HardwareAddr(nil), address...)
+				n.SourceMAC = &srcMac
 			}
 		}
 	}

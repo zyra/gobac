@@ -1,11 +1,14 @@
 package pdu
 
 import (
+	"errors"
+
 	"github.com/zyra/gobac/bacnet/types"
 )
 
 type ReadPropertyPdu struct {
-	Property *types.Property
+	Property     *types.Property
+	RequireValue bool
 }
 
 func (p *ReadPropertyPdu) MarshalBinary() ([]byte, error) {
@@ -18,5 +21,11 @@ func (p *ReadPropertyPdu) GetPduType() uint8 {
 
 func (p *ReadPropertyPdu) UnmarshalBinary(data []byte) (e error) {
 	p.Property = &types.Property{}
-	return p.Property.UnmarshalBinary(data)
+	if err := p.Property.UnmarshalBinary(data); err != nil {
+		return err
+	}
+	if p.RequireValue && len(p.Property.Values) == 0 {
+		return errors.New("ReadProperty acknowledgement has no value")
+	}
+	return nil
 }
