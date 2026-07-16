@@ -97,3 +97,25 @@ func TestUDPTransportRoundTrip(t *testing.T) {
 		t.Fatalf("payload = %q", datagram.Payload)
 	}
 }
+
+func TestUDPAllowsWildcardBroadcastListenerWithSpecificDevice(t *testing.T) {
+	probe, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4zero})
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := uint16(probe.LocalAddr().(*net.UDPAddr).Port)
+	if err := probe.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	device, err := ListenUDP(NewEndpoint(net.IPv4(127, 0, 0, 2), port))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer device.Close()
+	broadcast, err := ListenUDP(NewEndpoint(net.IPv4zero, port))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer broadcast.Close()
+}

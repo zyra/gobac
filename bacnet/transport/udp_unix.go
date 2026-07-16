@@ -4,21 +4,35 @@
 package transport
 
 import (
+	"context"
 	"net"
+	"syscall"
 
 	"golang.org/x/sys/unix"
 )
 
-func enableBroadcast(conn *net.UDPConn) error {
-	raw, err := conn.SyscallConn()
+func listenUDP(address *net.UDPAddr) (*net.UDPConn, error) {
+	config := net.ListenConfig{Control: func(network, address string, raw syscall.RawConn) error {
+		var socketErr error
+		if err := raw.Control(func(fd uintptr) {
+			if err := unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_REUSEADDR, 1); err != nil {
+				socketErr = err
+				return
+			}
+			socketErr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_BROADCAST, 1)
+		}); err != nil {
+			return err
+		}
+		return socketErr
+	}}
+	packet, err := config.ListenPacket(context.Background(), "udp4", address.String())
 	if err != nil {
-		return err
+		return nil, err
 	}
-	var socketErr error
-	if err := raw.Control(func(fd uintptr) {
-		socketErr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_BROADCAST, 1)
-	}); err != nil {
-		return err
+	conn, ok := packet.(*net.UDPConn)
+	if !ok {
+		packet.Close()
+		return nil, &net.AddrError{Err: "unexpected packet connection type", Addr: address.String()}
 	}
-	return socketErr
+	return conn, nil
 }

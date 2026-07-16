@@ -14,12 +14,8 @@ type UDPConn struct {
 }
 
 func ListenUDP(endpoint Endpoint) (*UDPConn, error) {
-	conn, err := net.ListenUDP("udp4", endpoint.UDPAddr())
+	conn, err := listenUDP(endpoint.UDPAddr())
 	if err != nil {
-		return nil, err
-	}
-	if err := enableBroadcast(conn); err != nil {
-		conn.Close()
 		return nil, err
 	}
 	local := EndpointFromUDP(conn.LocalAddr().(*net.UDPAddr))
