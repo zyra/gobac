@@ -7,6 +7,7 @@ import (
 	"github.com/zyra/gobac/v2/bacnet/types"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -168,7 +169,13 @@ func (s *Server) receiveUnicast(ctx context.Context) {
 	go s.receive(s.UnicastConn, ctx)
 }
 
-func (s *Server) receive(conn *net.UDPConn, ctx context.Context) {
+// udpReader is the narrow subset of *net.UDPConn that receive() depends on,
+// allowing tests to script ReadFromUDP behavior without a real socket.
+type udpReader interface {
+	ReadFromUDP(b []byte) (n int, addr *net.UDPAddr, err error)
+}
+
+func (s *Server) receive(conn udpReader, ctx context.Context) {
 	// Loop forever unless we're shutting down
 	for {
 		select {
@@ -182,22 +189,23 @@ func (s *Server) receive(conn *net.UDPConn, ctx context.Context) {
 			n, addr, err := conn.ReadFromUDP(b)
 			if err != nil {
 				rxBuffPool.Put(b)
-				if errVal, ok := err.(net.Error); ok {
-					if errVal.Timeout() {
-						// Timeout error
-						continue
-					}
-				}
-				// Send error to an error callback, if we have one registered
 				if s.isClosing() || ctx.Err() != nil {
 					return
 				}
+				if errVal, ok := err.(net.Error); ok && errVal.Timeout() {
+					// Read deadline reached; poll ctx/close state again.
+					continue
+				}
+				if strings.Contains(err.Error(), "use of closed network connection") {
+					// The socket is gone; the loop can never make progress.
+					s.reportError(err)
+					return
+				}
+				// Transient socket error (e.g. ENOBUFS): report and keep serving.
 				s.reportError(err)
-				return
-			} else {
-				s.handle(b, n, addr)
 				continue
 			}
+			s.handle(b, n, addr)
 		}
 	}
 }
