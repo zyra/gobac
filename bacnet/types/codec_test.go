@@ -170,6 +170,75 @@ func TestDoubleUsesNetworkByteOrder(t *testing.T) {
 	}
 }
 
+func TestBitStringPreservesUnusedBitsOctet(t *testing.T) {
+	value := BitString{0x01, 0x80}
+	encoded, err := value.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []byte{0x00, 0x80, 0x01}; !bytes.Equal(encoded, want) {
+		t.Fatalf("encoded bit string = %x, want %x", encoded, want)
+	}
+	var decoded BitString
+	if err := decoded.UnmarshalBinary(encoded); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(decoded, value) {
+		t.Fatalf("decoded bit string = %x, want %x", decoded, value)
+	}
+}
+
+func TestDecodedStructuredValuesCanBeReencoded(t *testing.T) {
+	wires := [][]byte{
+		{0xa4, 124, 7, 16, 4},
+		{0xb4, 12, 34, 56, 78},
+		{0xc4, 0x02, 0x00, 0x00, 0x7b},
+	}
+	for _, wire := range wires {
+		var value PropertyValue
+		if err := value.UnmarshalBinary(wire); err != nil {
+			t.Fatal(err)
+		}
+		encoded, err := value.MarshalBinary()
+		if err != nil {
+			t.Fatalf("re-encoding %x: %v", wire, err)
+		}
+		if !bytes.Equal(encoded, wire) {
+			t.Fatalf("re-encoded %x as %x", wire, encoded)
+		}
+	}
+}
+
+func TestDevicePreservesFullInstanceNumber(t *testing.T) {
+	objectID := &ObjectId{Type: ObjectTypeDevice}
+	if err := objectID.SetInstanceNumber(70000); err != nil {
+		t.Fatal(err)
+	}
+	objectBytes, err := objectID.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire := append([]byte{0xc4}, objectBytes...)
+	wire = append(wire, 0x22, 0x05, 0xc4, 0x91, 0x03, 0x21, 0x01)
+	var device Device
+	if err := device.UnmarshalBinary(wire); err != nil {
+		t.Fatal(err)
+	}
+	if device.DeviceInstance != 70000 {
+		t.Fatalf("device instance = %d", device.DeviceInstance)
+	}
+}
+
+func TestDateStringUsesDayAndTimeRequiresExactLength(t *testing.T) {
+	if got := (Date{Year: 2026, Month: 7, Day: 16, Weekday: 4}).String(); got != "2026-07-16" {
+		t.Fatalf("date string = %q", got)
+	}
+	var value Time
+	if err := value.UnmarshalBinary([]byte{1, 2, 3, 4, 5}); err == nil {
+		t.Fatal("time accepted trailing octets")
+	}
+}
+
 func TestMalformedTypeDecoderCorpus(t *testing.T) {
 	state := uint32(0x6d2b79f5)
 	for size := 0; size < 64; size++ {

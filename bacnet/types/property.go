@@ -8,13 +8,15 @@ import (
 )
 
 type Property struct {
-	IPAddress net.IP
-	ObjectId  *ObjectId
-	ID        PropertyId
-	Index     uint32
-	HasIndex  bool
-	Values    []*PropertyValue
-	Length    int
+	IPAddress    net.IP
+	ObjectId     *ObjectId
+	ID           PropertyId
+	Index        uint32
+	HasIndex     bool
+	Values       []*PropertyValue
+	EncodedValue []byte
+	Priority     uint8
+	Length       int
 }
 
 func (p *Property) ReadValue(dest interface{}) {
@@ -63,18 +65,22 @@ func (p *Property) MarshalBinary() ([]byte, error) {
 		buff.Write(index)
 	}
 
-	if len(p.Values) > 0 {
+	if len(p.Values) > 0 || p.EncodedValue != nil {
 		tag.TagNumber = 3
 		buff.Write(tag.EncodeOpeningTag())
-		for _, value := range p.Values {
-			if value == nil {
-				return nil, errors.New("property contains a nil value")
+		if p.EncodedValue != nil {
+			buff.Write(p.EncodedValue)
+		} else {
+			for _, value := range p.Values {
+				if value == nil {
+					return nil, errors.New("property contains a nil value")
+				}
+				encoded, err := value.MarshalBinary()
+				if err != nil {
+					return nil, err
+				}
+				buff.Write(encoded)
 			}
-			encoded, err := value.MarshalBinary()
-			if err != nil {
-				return nil, err
-			}
-			buff.Write(encoded)
 		}
 		buff.Write(tag.EncodeClosingTag())
 	}
@@ -166,6 +172,7 @@ func (p *Property) UnmarshalBinary(b []byte) error {
 	// WriteProperty request continues with the constructed property value.
 	if offset == len(b) {
 		p.Values = nil
+		p.EncodedValue = nil
 		p.Length = offset
 		return nil
 	}
@@ -178,19 +185,23 @@ func (p *Property) UnmarshalBinary(b []byte) error {
 		return errors.New("expected opening property value tag")
 	}
 	offset += headerLength
+	contentStart := offset
+	contentEnd, valueEnd, err := propertyValueBounds(b, contentStart, tagStart+2)
+	if err != nil {
+		return err
+	}
 
 	values := make([]*PropertyValue, 0, 1)
-	for {
+	for offset < contentEnd {
 		tag, headerLength, err = decode()
 		if err != nil {
 			return err
 		}
-		if tag.IsContext(tagStart+2) && tag.Closing {
-			offset += headerLength
-			break
-		}
 		if tag.Context || tag.Opening || tag.Closing {
-			return errors.New("unexpected context tag in property value")
+			p.Values = nil
+			p.EncodedValue = append([]byte(nil), b[contentStart:contentEnd]...)
+			p.Length = valueEnd
+			return nil
 		}
 		payloadLength := tag.LenValue
 		if tag.TagNumber == TagNull || tag.TagNumber == TagBoolean {
@@ -209,6 +220,42 @@ func (p *Property) UnmarshalBinary(b []byte) error {
 	}
 
 	p.Values = values
-	p.Length = offset
+	p.EncodedValue = nil
+	p.Length = valueEnd
 	return nil
+}
+
+func propertyValueBounds(b []byte, offset int, outerTag uint8) (int, int, error) {
+	stack := []uint8{outerTag}
+	for offset < len(b) {
+		start := offset
+		tag := &Tag{}
+		headerLength := tag.DecodeTag(b[offset:])
+		if headerLength == 0 {
+			return 0, 0, errors.New("malformed tag in property value")
+		}
+		offset += headerLength
+		switch {
+		case tag.Opening:
+			stack = append(stack, tag.TagNumber)
+		case tag.Closing:
+			if len(stack) == 0 || stack[len(stack)-1] != tag.TagNumber {
+				return 0, 0, errors.New("mismatched closing tag in property value")
+			}
+			stack = stack[:len(stack)-1]
+			if len(stack) == 0 {
+				return start, offset, nil
+			}
+		default:
+			payloadLength := tag.LenValue
+			if !tag.Context && (tag.TagNumber == TagNull || tag.TagNumber == TagBoolean) {
+				payloadLength = 0
+			}
+			if payloadLength < 0 || len(b)-offset < payloadLength {
+				return 0, 0, errors.New("property value is truncated")
+			}
+			offset += payloadLength
+		}
+	}
+	return 0, 0, errors.New("property value is not closed")
 }

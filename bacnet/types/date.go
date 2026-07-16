@@ -35,7 +35,7 @@ func (d *Date) UnmarshalBinary(b []byte) error {
 }
 
 func (d Date) String() string {
-	return fmt.Sprintf("%04d-%02d-%02d", d.Year, d.Month, d.Weekday)
+	return fmt.Sprintf("%04d-%02d-%02d", d.Year, d.Month, d.Day)
 }
 
 func (d Date) GoTime() (time.Time, error) {

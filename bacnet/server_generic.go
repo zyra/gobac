@@ -1,71 +1,93 @@
-// +build !linux
-// +build !freebsd
+//go:build !linux && !freebsd
+// +build !linux,!freebsd
 
 package bacnet
 
 import (
 	"context"
-	"log"
 	"net"
 )
 
 func (s *Server) Listen(ctx context.Context) {
+	if err := s.ListenContext(ctx); err != nil {
+		if err != context.Canceled && err != context.DeadlineExceeded {
+			s.reportError(err)
+		}
+		s.markStarted()
+		if err != ErrServerAlreadyListening {
+			s.closeConn()
+		}
+	}
+}
+
+func (s *Server) ListenContext(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-
-	s.ServerAddr = getUdpAddr(s.IPv4, s.ServerPort)
-	s.BroadcastAddr = getUdpAddr(s.BroadcastIPv4, s.BroadcastPort)
-
-	if conn, err := net.ListenUDP("udp", s.BroadcastAddr); err != nil {
-		panic(err)
-	} else {
-		s.BroadcastConn = conn
+	if err := s.reserveListener(); err != nil {
+		return err
 	}
-
-	if conn, err := net.ListenUDP("udp", s.ServerAddr); err != nil {
-		panic(err)
-	} else {
-		s.UnicastConn = conn
-	}
-
-	if deadline, ok := ctx.Deadline(); ok {
-		// Context has a deadline. Let's set the deadline of our connection read
-		// this this value.
-		if err := s.UnicastConn.SetReadDeadline(deadline); err != nil {
-			if s.rcvErrors {
-				s.error <- err
-			}
+	installed := false
+	defer func() {
+		if !installed {
+			s.cancelListenerStart()
 		}
+	}()
 
-		if err := s.UnicastConn.SetWriteDeadline(deadline); err != nil {
-			if s.rcvErrors {
-				s.error <- err
-			}
-		}
+	serverAddr := getUdpAddr(s.IPv4, s.ServerPort)
+	broadcastAddr := getUdpAddr(s.BroadcastIPv4, s.BroadcastPort)
+
+	broadcastConn, err := net.ListenUDP("udp4", broadcastAddr)
+	if err != nil {
+		return err
 	}
+	unicastConn, err := net.ListenUDP("udp4", serverAddr)
+	if err != nil {
+		_ = broadcastConn.Close()
+		return err
+	}
+	if err := s.installConnections(broadcastConn, unicastConn, serverAddr, broadcastAddr); err != nil {
+		_ = unicastConn.Close()
+		_ = broadcastConn.Close()
+		return err
+	}
+	installed = true
 
 	s.receiveBroadcast(ctx)
 	s.receiveUnicast(ctx)
+	s.markStarted()
 
-	close(s.start)
-
-	<-ctx.Done()
-	s.closeConn()
+	select {
+	case <-ctx.Done():
+		s.closeConn()
+		return ctx.Err()
+	case <-s.close:
+		return nil
+	}
 }
 
 func (s *Server) closeConn() {
-	s.closing = true
-	if err := s.UnicastConn.Close(); err != nil {
-		log.Printf("Error closing connection: %s\n", err)
-	}
-	if err := s.BroadcastConn.Close(); err != nil {
-		log.Printf("Error closing connection: %s\n", err)
-	}
-	s.close <- struct{}{}
-	s.start = make(chan struct{})
+	s.closeOnce.Do(func() {
+		s.stateMtx.Lock()
+		s.closing = true
+		s.listening = false
+		unicastConn := s.UnicastConn
+		broadcastConn := s.BroadcastConn
+		s.stateMtx.Unlock()
+		if unicastConn != nil {
+			if err := unicastConn.Close(); err != nil {
+				s.reportError(err)
+			}
+		}
+		if broadcastConn != nil {
+			if err := broadcastConn.Close(); err != nil {
+				s.reportError(err)
+			}
+		}
+		close(s.close)
+	})
 }
 
 func (s *Server) GetConnection() *net.UDPConn {
-	return s.BroadcastConn
+	return s.connection()
 }

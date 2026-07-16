@@ -14,6 +14,9 @@ func (s *Server) WriteProperty(ctx context.Context, deviceAddress net.IP, object
 	if deviceAddress == nil || deviceAddress.Equal(net.IP{0, 0, 0, 0}) {
 		return errors.New("received a nil or empty device IP")
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	req := NewRequest()
 	defer req.Release()
@@ -39,16 +42,18 @@ func (s *Server) WriteProperty(ctx context.Context, deviceAddress net.IP, object
 		return err
 	}
 
-	tc := time.After(s.DefaultTimeout)
+	timer := time.NewTimer(s.DefaultTimeout)
+	defer timer.Stop()
 
 	select {
 	case <-ctx.Done():
-		return errors.New("context finished")
+		return ctx.Err()
 
-	case <-tc:
+	case <-timer.C:
 		return errors.New("timeout")
 
 	case data := <-req.Data():
+		defer data.Release()
 		if data.Successful() {
 			return nil
 		} else if data.Errored() {

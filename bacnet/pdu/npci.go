@@ -53,14 +53,41 @@ func (n *Npci) MarshalBinary() (b []byte, e error) {
 		return nil, errors.New("network layer messages are not supported")
 	}
 
-	if n.IsConfirmed {
-		b = make([]byte, 2)
-	} else {
-		b = make([]byte, 6)
+	destination := []byte(nil)
+	if n.DestinationMAC != nil {
+		destination = []byte(*n.DestinationMAC)
+	}
+	if len(destination) > types.MaxMacLen {
+		return nil, errors.New("destination MAC is too long")
+	}
+	if n.DestinationLength != 0 && int(n.DestinationLength) != len(destination) {
+		return nil, errors.New("destination MAC length does not match address")
 	}
 
+	source := []byte(nil)
+	if n.SourceMAC != nil {
+		source = []byte(*n.SourceMAC)
+	}
+	if len(source) > types.MaxMacLen {
+		return nil, errors.New("source MAC is too long")
+	}
+	if n.SourceLength != 0 && int(n.SourceLength) != len(source) {
+		return nil, errors.New("source MAC length does not match address")
+	}
+	if n.SourceNet != 0 && len(source) == 0 {
+		return nil, errors.New("source network requires a source MAC")
+	}
+
+	length := 2
+	if n.DestinationNet != 0 {
+		length += 2 + 1 + len(destination) + 1
+	}
+	if n.SourceNet != 0 {
+		length += 2 + 1 + len(source)
+	}
+	b = make([]byte, length)
 	b[0] = byte(n.ProtocolVersion)
-	b[1] = 0
+	offset := 2
 
 	if n.NetworkLayerMessage {
 		b[1] |= types.BIT7
@@ -68,19 +95,34 @@ func (n *Npci) MarshalBinary() (b []byte, e error) {
 
 	if n.DestinationNet > 0 {
 		b[1] |= types.BIT5
-
-		// Mark message as broadcast
-		if v, e := types.Uint16(65535).MarshalBinary(); e != nil {
+		if v, e := n.DestinationNet.MarshalBinary(); e != nil {
 			return nil, e
 		} else {
-			copy(b[2:], v)
+			copy(b[offset:], v)
 		}
+		offset += 2
+		b[offset] = byte(len(destination))
+		offset++
+		copy(b[offset:], destination)
+		offset += len(destination)
+	}
 
-		// Destination length
-		b[4] = 0
+	if n.SourceNet > 0 {
+		b[1] |= types.BIT3
+		if v, e := n.SourceNet.MarshalBinary(); e != nil {
+			return nil, e
+		} else {
+			copy(b[offset:], v)
+		}
+		offset += 2
+		b[offset] = byte(len(source))
+		offset++
+		copy(b[offset:], source)
+		offset += len(source)
+	}
 
-		// Hop count
-		b[5] = byte(n.HopCount)
+	if n.DestinationNet > 0 {
+		b[offset] = byte(n.HopCount)
 	}
 
 	if n.ExpectingReply {
@@ -148,11 +190,6 @@ func (n *Npci) UnmarshalBinary(b []byte) error {
 			}
 		}
 
-		if b, e := buff.ReadByte(); e != nil {
-			return e
-		} else {
-			n.HopCount = b
-		}
 	}
 
 	if hasSrc := n.ControlOctet & types.BIT3; hasSrc != 0 {
@@ -183,6 +220,14 @@ func (n *Npci) UnmarshalBinary(b []byte) error {
 				srcMac := append(net.HardwareAddr(nil), address...)
 				n.SourceMAC = &srcMac
 			}
+		}
+	}
+
+	if n.DestinationNet != 0 {
+		if b, e := buff.ReadByte(); e != nil {
+			return e
+		} else {
+			n.HopCount = b
 		}
 	}
 

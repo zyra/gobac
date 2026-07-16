@@ -2,17 +2,22 @@ package pdu
 
 import (
 	"bytes"
+	"errors"
+
 	"github.com/zyra/gobac/bacnet/types"
 )
 
 type SubscribeCov struct {
-	ProcessIdentifier uint8
+	ProcessIdentifier uint32
 	ObjectId          *types.ObjectId
 	Cancel            bool
 	Timeout           uint32
 }
 
 func (p *SubscribeCov) MarshalBinary() ([]byte, error) {
+	if p.ObjectId == nil {
+		return nil, errors.New("COV subscription object identifier is required")
+	}
 	buff := buffPool.Get().(*bytes.Buffer)
 	defer buff.Reset()
 	defer buffPool.Put(buff)
@@ -21,13 +26,14 @@ func (p *SubscribeCov) MarshalBinary() ([]byte, error) {
 
 	// Write process id tag & value
 	t.TagNumber = 0
-	t.LenValue = types.GetUintLen(uint(p.ProcessIdentifier))
+	processIdentifier := types.EncodeVarUint(p.ProcessIdentifier)
+	t.LenValue = len(processIdentifier)
 
 	if _, err := buff.Write(t.EncodeContextTag()); err != nil {
 		return nil, err
 	}
 
-	if err := buff.WriteByte(p.ProcessIdentifier); err != nil {
+	if _, err := buff.Write(processIdentifier); err != nil {
 		return nil, err
 	}
 
@@ -63,14 +69,15 @@ func (p *SubscribeCov) MarshalBinary() ([]byte, error) {
 		}
 
 		// Set timeout
+		timeout := types.EncodeVarUint(p.Timeout)
 		t.TagNumber = 3
-		t.LenValue = 4
+		t.LenValue = len(timeout)
 
 		if _, err := buff.Write(t.EncodeContextTag()); err != nil {
 			return nil, err
 		}
 
-		if _, err := buff.Write(types.EncodeVarUint(p.Timeout)); err != nil {
+		if _, err := buff.Write(timeout); err != nil {
 			return nil, err
 		}
 	}

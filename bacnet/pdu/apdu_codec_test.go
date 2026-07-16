@@ -41,13 +41,87 @@ func TestAbortPreservesInvokeID(t *testing.T) {
 	}
 }
 
+func TestApduPreservesLowBitMetadata(t *testing.T) {
+	confirmed := Apdu{PduType: types.PduTypeConfirmedServiceRequest, MaxApdu: 1476, InvokeID: 1, ServiceChoice: 99, SegmentedResponseAccepted: true}
+	encoded, err := confirmed.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if encoded[0] != 0x02 {
+		t.Fatalf("confirmed flags = %#x", encoded[0])
+	}
+	var decoded Apdu
+	if err := decoded.UnmarshalBinary(encoded); err != nil {
+		t.Fatal(err)
+	}
+	if !decoded.SegmentedResponseAccepted {
+		t.Fatal("segmented-response-accepted flag was lost")
+	}
+
+	abort := Apdu{PduType: types.PduTypeAbort, InvokeID: 2, AbortReason: types.AbortReasonOther, Server: true}
+	encoded, err = abort.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if encoded[0] != 0x71 {
+		t.Fatalf("abort flags = %#x", encoded[0])
+	}
+	if err := decoded.UnmarshalBinary(encoded); err != nil {
+		t.Fatal(err)
+	}
+	if !decoded.Server {
+		t.Fatal("abort server flag was lost")
+	}
+}
+
+func TestSegmentedConfirmedRequestHeaderIsDecoded(t *testing.T) {
+	wire := []byte{0x0c, 0x05, 37, 2, 4, byte(types.ConfirmedServiceReadProperty), 0xaa}
+	var apdu Apdu
+	if err := apdu.UnmarshalBinary(wire); err != nil {
+		t.Fatal(err)
+	}
+	if !apdu.Segmented || !apdu.MoreFollows || apdu.InvokeID != 37 || apdu.SequenceNumber != 2 || apdu.ProposedWindowSize != 4 || apdu.ServiceChoice != types.ConfirmedServiceReadProperty {
+		t.Fatalf("decoded segmented request = %+v", apdu)
+	}
+	if !bytes.Equal(apdu.Payload, []byte{0xaa}) {
+		t.Fatalf("payload = %x", apdu.Payload)
+	}
+}
+
 func TestErrorApduDecoding(t *testing.T) {
 	var apdu Apdu
-	if err := apdu.UnmarshalBinary([]byte{0x50, 0x7e, 0x0c, 0x91, 0x02, 0x91, 0x20}); err != nil {
+	if err := apdu.UnmarshalBinary([]byte{0x50, 0x7e, 0x0c, 0x91, 0x02, 0x91, 0x20, 0xaa}); err != nil {
 		t.Fatal(err)
 	}
 	if !apdu.Errored || apdu.InvokeID != 0x7e || apdu.ServiceChoice != 0x0c || apdu.ErrorClass != 2 || apdu.ErrorCode != 32 {
 		t.Fatalf("decoded error APDU incorrectly: %+v", apdu)
+	}
+	if !bytes.Equal(apdu.Payload, []byte{0xaa}) {
+		t.Fatalf("error payload = %x", apdu.Payload)
+	}
+}
+
+func TestUnconfirmedCovNotificationIsDecoded(t *testing.T) {
+	payload := []byte{
+		0x09, 1,
+		0x1c, 0x02, 0x00, 0x00, 0x01,
+		0x2c, 0x00, 0x00, 0x00, 0x01,
+		0x39, 0,
+		0x4e,
+		0x09, 0x55, 0x2e, 0x21, 1, 0x2f, 0x39, 1,
+		0x09, 0x51, 0x2e, 0x21, 2, 0x2f, 0x39, 16,
+		0x4f,
+	}
+	var apdu Apdu
+	if err := apdu.UnmarshalBinary(append([]byte{0x10, byte(types.UnconfirmedServiceCovNotification)}, payload...)); err != nil {
+		t.Fatal(err)
+	}
+	notification, ok := apdu.ResponseData.(*CovNotification)
+	if !ok || len(notification.Properties) != 2 {
+		t.Fatalf("notification = %#v", apdu.ResponseData)
+	}
+	if notification.Properties[0].Priority != 1 || notification.Properties[1].Priority != 16 {
+		t.Fatalf("property priorities = %d, %d", notification.Properties[0].Priority, notification.Properties[1].Priority)
 	}
 }
 

@@ -11,7 +11,7 @@ type ServerConfig struct {
 	// Defaults to 10 seconds.
 	DefaultTimeout time.Duration
 	// Set this to true to receive errors
-	// you must listen to the Error() chan to avoid deadlock
+	// through the buffered Error or Errors channel.
 	// Defaults to false.
 	ReceiveErrors bool
 	// server BBMD port.

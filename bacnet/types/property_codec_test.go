@@ -79,6 +79,34 @@ func TestPropertyArrayIndexEncoding(t *testing.T) {
 	}
 }
 
+func TestPropertyPreservesConstructedValue(t *testing.T) {
+	wire := []byte{
+		0x0c, 0x00, 0x40, 0x00, 0x01,
+		0x19, 0x55,
+		0x3e, 0x0e, 0x19, 0x01, 0x0f, 0x3f,
+	}
+	var property Property
+	if err := property.UnmarshalBinary(wire); err != nil {
+		t.Fatal(err)
+	}
+	if want := []byte{0x0e, 0x19, 0x01, 0x0f}; !bytes.Equal(property.EncodedValue, want) {
+		t.Fatalf("encoded value = %x, want %x", property.EncodedValue, want)
+	}
+	encoded, err := property.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(encoded, wire) {
+		t.Fatalf("re-encoded property = %x, want %x", encoded, wire)
+	}
+}
+
+func TestPropertyValueRejectsUnknownApplicationTag(t *testing.T) {
+	if _, err := (&PropertyValue{Type: 15, Value: uint32(1)}).MarshalBinary(); err == nil {
+		t.Fatal("unsupported application tag was accepted")
+	}
+}
+
 func TestPropertyRejectsMalformedInput(t *testing.T) {
 	inputs := [][]byte{
 		nil,

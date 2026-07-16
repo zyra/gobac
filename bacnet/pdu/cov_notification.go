@@ -8,7 +8,7 @@ import (
 )
 
 type CovNotification struct {
-	ProcessIdentifier uint8
+	ProcessIdentifier uint32
 	DeviceObjectId    *types.ObjectId
 	ObjectId          *types.ObjectId
 	TimeRemaining     uint32
@@ -43,11 +43,7 @@ func (n *CovNotification) UnmarshalBinary(b []byte) error {
 	if err != nil {
 		return err
 	}
-	processIdentifier := types.DecodeVarUint(processID)
-	if processIdentifier > 255 {
-		return errors.New("COV process identifier exceeds supported range")
-	}
-	n.ProcessIdentifier = uint8(processIdentifier)
+	n.ProcessIdentifier = types.DecodeVarUint(processID)
 
 	deviceObjectID, err := readContextValue(1, 4, 4)
 	if err != nil {
@@ -120,10 +116,11 @@ func (n *CovNotification) UnmarshalBinary(b []byte) error {
 				}
 				offset += headerLength
 				priority := types.DecodeVarUint(b[offset : offset+tag.LenValue])
-				if priority > 255 {
-					return errors.New("COV priority exceeds supported range")
+				if priority < 1 || priority > 16 {
+					return errors.New("COV priority must be between 1 and 16")
 				}
-				n.Priority = uint8(priority)
+				property.Priority = uint8(priority)
+				n.Priority = property.Priority
 				offset += tag.LenValue
 			}
 		}

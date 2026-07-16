@@ -255,7 +255,14 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 		}
 
 	case TagDate:
-		if dateVal, ok := p.Value.(*Date); ok {
+		var dateVal *Date
+		switch value := p.Value.(type) {
+		case *Date:
+			dateVal = value
+		case Date:
+			dateVal = &value
+		}
+		if dateVal != nil {
 			tag.LenValue = 4
 			dateBytes, err := dateVal.MarshalBinary()
 
@@ -273,7 +280,14 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 		}
 
 	case TagTime:
-		if timeVal, ok := p.Value.(*Time); ok {
+		var timeVal *Time
+		switch value := p.Value.(type) {
+		case *Time:
+			timeVal = value
+		case Time:
+			timeVal = &value
+		}
+		if timeVal != nil {
 			tag.LenValue = 4
 
 			timeBytes, err := timeVal.MarshalBinary()
@@ -292,7 +306,14 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 		}
 
 	case TagObjectId:
-		if objIdVal, ok := p.Value.(*ObjectId); ok {
+		var objIdVal *ObjectId
+		switch value := p.Value.(type) {
+		case *ObjectId:
+			objIdVal = value
+		case ObjectId:
+			objIdVal = &value
+		}
+		if objIdVal != nil {
 			tag.LenValue = 4
 			objIdBytes, err := objIdVal.MarshalBinary()
 
@@ -308,6 +329,8 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 		} else {
 			return nil, invalidVal(p)
 		}
+	default:
+		return nil, fmt.Errorf("unsupported application tag: %d", p.Type)
 	}
 
 	return buff.Bytes(), nil

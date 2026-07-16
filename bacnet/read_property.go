@@ -13,6 +13,9 @@ func (s *Server) ReadProperty(ctx context.Context, address net.IP, objectType, o
 	if address == nil || address.Equal(net.IP{0, 0, 0, 0}) {
 		return nil, errors.New("received a nil or empty device IP")
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	req := NewRequest()
 	defer req.Release()
@@ -31,16 +34,18 @@ func (s *Server) ReadProperty(ctx context.Context, address net.IP, objectType, o
 		return nil, err
 	}
 
-	tc := time.After(s.DefaultTimeout)
+	timer := time.NewTimer(s.DefaultTimeout)
+	defer timer.Stop()
 
 	select {
 	case <-ctx.Done():
-		return nil, errors.New("context finished")
+		return nil, ctx.Err()
 
-	case <-tc:
+	case <-timer.C:
 		return nil, errors.New("timeout")
 
 	case data := <-req.Data():
+		defer data.Release()
 		if data.Successful() {
 			if val, ok := data.ResponseData().(*pdu.ReadPropertyPdu); ok {
 				return val.Property.Values, nil

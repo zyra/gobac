@@ -67,12 +67,15 @@ func (h *Header) UnmarshalBinary(b []byte) error {
 
 	if b := buff.Next(2); len(b) == 2 {
 		if e := h.BvlcLength.UnmarshalBinary(b); e != nil {
-			return nil
+			return e
 		}
 	} else {
 		return fmt.Errorf("unexpected number of bytes")
 	}
 
+	if h.BvlcLength < 4 {
+		return errors.New("BVLC length is smaller than its header")
+	}
 	h.NsduLength = h.BvlcLength - 4
 	return nil
 }
