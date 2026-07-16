@@ -64,6 +64,13 @@ func TestDecodeScenarioRejectsUnknownFields(t *testing.T) {
 	}
 }
 
+func TestDecodeScenarioRejectsTrailingJSON(t *testing.T) {
+	input := `{"version":1,"network":{"mode":"single-device"},"devices":[{"id":1,"name":"one"}]} {}`
+	if _, err := DecodeScenario(strings.NewReader(input), "json"); err == nil {
+		t.Fatal("expected trailing JSON value to be rejected")
+	}
+}
+
 func TestScenarioRejectsDuplicateEndpoints(t *testing.T) {
 	scenario := &Scenario{
 		Version: ScenarioVersion,

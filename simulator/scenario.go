@@ -69,6 +69,12 @@ func DecodeScenario(reader io.Reader, format string) (*Scenario, error) {
 		if err := decoder.Decode(scenario); err != nil {
 			return nil, err
 		}
+		if err := decoder.Decode(&struct{}{}); err != io.EOF {
+			if err == nil {
+				return nil, errors.New("scenario contains multiple JSON values")
+			}
+			return nil, err
+		}
 	case "yaml", "yml", "":
 		if err := yaml.UnmarshalStrict(data, scenario); err != nil {
 			return nil, err
