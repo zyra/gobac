@@ -1,136 +1,142 @@
 package pdu
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
+
 	"github.com/zyra/gobac/bacnet/types"
 )
 
 type CovNotification struct {
-	ProcessIdentifier uint8
-	DeviceObjectId    *types.ObjectId
-	ObjectId          *types.ObjectId
-	TimeRemaining     uint32
-	Properties        []*types.Property
-	Priority          uint8
+	ProcessIdentifier   uint8
+	ProcessIdentifier32 uint32
+	DeviceObjectId      *types.ObjectId
+	ObjectId            *types.ObjectId
+	TimeRemaining       uint32
+	Properties          []*types.Property
+	Priority            uint8
 }
 
-func (n *CovNotification) UnmarshalBinary(b []byte) (err error) {
-	if b == nil {
-		return errors.New("received a nil byte slice")
-	}
-
+func (n *CovNotification) UnmarshalBinary(b []byte) error {
 	if len(b) == 0 {
 		return errors.New("received an empty byte slice")
 	}
-
-	buff := buffPool.Get().(*bytes.Buffer)
-	buff.Write(b)
-	defer buff.Reset()
-	defer buffPool.Put(buff)
-	t := &types.Tag{}
-
-	// decode process id
-	buff.Next(t.DecodeTag(buff.Bytes()))
-
-	if !t.IsContext(0) {
-		return fmt.Errorf("expected tag %d and got %d\n", 0, t.TagNumber)
+	offset := 0
+	readContextValue := func(number uint8, minLength, maxLength int) ([]byte, error) {
+		if offset >= len(b) {
+			return nil, errors.New("COV notification is truncated")
+		}
+		tag := &types.Tag{}
+		headerLength := tag.DecodeTag(b[offset:])
+		if headerLength == 0 || !tag.IsContext(number) || tag.Opening || tag.Closing {
+			return nil, fmt.Errorf("expected context tag %d", number)
+		}
+		if tag.LenValue < minLength || tag.LenValue > maxLength || len(b)-offset-headerLength < tag.LenValue {
+			return nil, errors.New("COV notification value is truncated")
+		}
+		offset += headerLength
+		value := b[offset : offset+tag.LenValue]
+		offset += tag.LenValue
+		return value, nil
 	}
 
-	if n.ProcessIdentifier, err = buff.ReadByte(); err != nil {
+	processID, err := readContextValue(0, 1, 4)
+	if err != nil {
 		return err
 	}
+	n.ProcessIdentifier32 = types.DecodeVarUint(processID)
+	n.ProcessIdentifier = uint8(n.ProcessIdentifier32)
 
-	// decode deivce obj id
-	buff.Next(t.DecodeTag(buff.Bytes()))
-
-	if !t.IsContext(1) {
-		return fmt.Errorf("expected tag %d and got %d\n", 1, t.TagNumber)
+	deviceObjectID, err := readContextValue(1, 4, 4)
+	if err != nil {
+		return err
 	}
-
 	n.DeviceObjectId = &types.ObjectId{}
-
-	if err := n.DeviceObjectId.UnmarshalBinary(buff.Next(t.LenValue)); err != nil {
+	if err := n.DeviceObjectId.UnmarshalBinary(deviceObjectID); err != nil {
 		return err
 	}
-
-	// decode obj id
-	buff.Next(t.DecodeTag(buff.Bytes()))
-
-	if !t.IsContext(2) {
-		return fmt.Errorf("expected tag %d and got %d\n", 2, t.TagNumber)
+	if n.DeviceObjectId.Type != types.ObjectTypeDevice {
+		return errors.New("COV initiating object is not a device")
 	}
 
+	monitoredObjectID, err := readContextValue(2, 4, 4)
+	if err != nil {
+		return err
+	}
 	n.ObjectId = &types.ObjectId{}
-
-	if err := n.ObjectId.UnmarshalBinary(buff.Next(t.LenValue)); err != nil {
+	if err := n.ObjectId.UnmarshalBinary(monitoredObjectID); err != nil {
 		return err
 	}
 
-	// Decode time remaining
-	buff.Next(t.DecodeTag(buff.Bytes()))
-	if !t.IsContext(3) {
-		return fmt.Errorf("expected tag %d and got %d\n", 3, t.TagNumber)
+	timeRemaining, err := readContextValue(3, 1, 4)
+	if err != nil {
+		return err
 	}
+	n.TimeRemaining = types.DecodeVarUint(timeRemaining)
 
-	n.TimeRemaining = types.DecodeVarUint(buff.Next(t.LenValue))
-
-	// Decode opening tag
-	buff.Next(t.DecodeTag(buff.Bytes()))
-
-	if !t.IsContext(4) {
-		return fmt.Errorf("expected tag %d and got %d\n", 4, t.TagNumber)
+	if offset >= len(b) {
+		return errors.New("COV notification has no list-of-values")
 	}
+	listTag := &types.Tag{}
+	headerLength := listTag.DecodeTag(b[offset:])
+	if headerLength == 0 || !listTag.IsContext(4) || !listTag.Opening {
+		return errors.New("expected opening list-of-values tag")
+	}
+	offset += headerLength
 
-	// read values
-	values := make([]*types.Property, 0, 2)
-
-	for buff.Len() > 1 {
-		b := buff.Bytes()[0]
-		if b&0x07 == 7 {
-			// closing tag
-			// let's exit loop before Property steals our bytes!
+	properties := make([]*types.Property, 0, 2)
+	for {
+		if offset >= len(b) {
+			return errors.New("COV list-of-values is not closed")
+		}
+		tag := &types.Tag{}
+		headerLength = tag.DecodeTag(b[offset:])
+		if headerLength == 0 {
+			return errors.New("malformed COV property tag")
+		}
+		if tag.IsContext(4) && tag.Closing {
+			offset += headerLength
 			break
 		}
 
-		val := types.Property{
-			ObjectId: n.ObjectId,
-		}
-
-		if err := val.UnmarshalBinary(buff.Bytes()); err != nil {
+		property := &types.Property{ObjectId: n.ObjectId}
+		if err := property.UnmarshalBinary(b[offset:]); err != nil {
 			return err
 		}
-
-		// mark bytes as read
-		buff.Next(val.Length)
-
-		// append prop
-		values = append(values, &val)
-
-		// Check optional priority
-		r := t.DecodeTag(buff.Bytes())
-
-		if t.IsContext(3) {
-			buff.Next(r)
-			n.Priority = uint8(t.LenValue)
+		if property.Length <= 0 {
+			return errors.New("COV property consumed no data")
 		}
+		offset += property.Length
+		properties = append(properties, property)
 
-		// Check closing tag
-		r = t.DecodeTag(buff.Bytes())
-		if t.IsContext(4) {
-			buff.Next(r)
-			break
-		} else {
-			lll := buff.Len()
-			if lll == 1 {
-				return fmt.Errorf("expected tag %d and got %d\n", 4, t.TagNumber)
+		if offset < len(b) {
+			tag = &types.Tag{}
+			headerLength = tag.DecodeTag(b[offset:])
+			if headerLength == 0 {
+				return errors.New("malformed COV priority tag")
 			}
-			continue
+			if tag.IsContext(3) && !tag.Opening && !tag.Closing {
+				if tag.LenValue < 1 || tag.LenValue > 4 || len(b)-offset-headerLength < tag.LenValue {
+					return errors.New("COV priority is truncated")
+				}
+				offset += headerLength
+				priority := types.DecodeVarUint(b[offset : offset+tag.LenValue])
+				if priority < 1 || priority > 16 {
+					return errors.New("COV priority must be between 1 and 16")
+				}
+				property.Priority = uint8(priority)
+				n.Priority = property.Priority
+				offset += tag.LenValue
+			}
 		}
 	}
 
-	n.Properties = values
-
+	if offset != len(b) {
+		return errors.New("unexpected trailing COV notification data")
+	}
+	if len(properties) == 0 {
+		return errors.New("COV notification has an empty list-of-values")
+	}
+	n.Properties = properties
 	return nil
 }

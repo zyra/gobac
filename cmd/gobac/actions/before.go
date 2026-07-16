@@ -3,12 +3,13 @@ package actions
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/urfave/cli"
 	"github.com/zyra/gobac/bacnet"
-	"time"
 )
 
-var server bacnet.Server
+var server *bacnet.Server
 var verbose bool
 
 func logVerbose(vals ...interface{}) {
@@ -28,7 +29,7 @@ func logVerbosef(format string, vals ...interface{}) {
 }
 
 func Before(c *cli.Context) error {
-	if c.NArg() == 0 || c.Args().First() == "help" {
+	if c.NArg() == 0 || hasHelpArgument(c.Args()) {
 		return nil
 	}
 
@@ -56,4 +57,11 @@ func Before(c *cli.Context) error {
 	<-s.Start()
 
 	return nil
+}
+
+func hasHelpArgument(args cli.Args) bool {
+	if len(args) == 0 || args[0] == "help" {
+		return true
+	}
+	return len(args) > 1 && (args[1] == "--help" || args[1] == "-h")
 }

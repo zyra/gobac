@@ -5,13 +5,14 @@ import (
 )
 
 type Object struct {
-	IPAddress    net.IP
-	ObjectId     *ObjectId
-	PresentValue *PropertyValue // TODO revise this
-	Name         string
-	Description  string
-	DeviceID     Uint16
-	StateValues  map[string]string
+	IPAddress      net.IP
+	ObjectId       *ObjectId
+	PresentValue   *PropertyValue // TODO revise this
+	Name           string
+	Description    string
+	DeviceID       Uint16
+	DeviceInstance uint32
+	StateValues    map[string]string
 }
 
 func (o *Object) Reset() {
@@ -21,5 +22,6 @@ func (o *Object) Reset() {
 	o.Description = ""
 	o.Name = ""
 	o.DeviceID = 0
+	o.DeviceInstance = 0
 	o.StateValues = map[string]string{}
 }

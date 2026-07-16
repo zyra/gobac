@@ -3,12 +3,13 @@ package actions
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/urfave/cli"
-	"github.com/zyra/gobac/bacnet"
-	"github.com/zyra/gobac/bacnet/types"
 	"log"
 	"sync"
 	"time"
+
+	"github.com/urfave/cli"
+	"github.com/zyra/gobac/bacnet"
+	"github.com/zyra/gobac/bacnet/types"
 )
 
 type ExtendedObject struct {

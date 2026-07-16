@@ -23,12 +23,8 @@ func (d Date) MarshalBinary() ([]byte, error) {
 }
 
 func (d *Date) UnmarshalBinary(b []byte) error {
-	if b == nil {
-		return errors.New("received a nil byte slice")
-	}
-
-	if len(b) == 0 {
-		return errors.New("received an empty byte slice")
+	if len(b) != 4 {
+		return errors.New("date expects 4 octets")
 	}
 
 	d.Year = uint16(b[0]) + 1900
@@ -39,7 +35,7 @@ func (d *Date) UnmarshalBinary(b []byte) error {
 }
 
 func (d Date) String() string {
-	return fmt.Sprintf("%04d-%02d-%02d", d.Year, d.Month, d.Weekday)
+	return fmt.Sprintf("%04d-%02d-%02d", d.Year, d.Month, d.Day)
 }
 
 func (d Date) GoTime() (time.Time, error) {

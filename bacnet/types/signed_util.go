@@ -3,7 +3,7 @@ package types
 import "math"
 
 func GetIntLen(val int) int {
-	if val <= math.MaxInt8 && val >= math.MinInt16 {
+	if val <= math.MaxInt8 && val >= math.MinInt8 {
 		return 1
 	}
 
@@ -11,7 +11,7 @@ func GetIntLen(val int) int {
 		return 2
 	}
 
-	if val <= 8388607 && val >= -8388607 {
+	if val <= 8388607 && val >= -8388608 {
 		return 3
 	}
 

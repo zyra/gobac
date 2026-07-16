@@ -10,10 +10,10 @@ import (
 var typeOfFloat = reflect.TypeOf(float64(0))
 var typeOfFloat32 = reflect.TypeOf(float32(0))
 
-//var typeOfInt = reflect.TypeOf(int64(0))
+// var typeOfInt = reflect.TypeOf(int64(0))
 var typeOfInt32 = reflect.TypeOf(int32(0))
 
-//var typeOfUnt = reflect.TypeOf(uint64(0))
+// var typeOfUnt = reflect.TypeOf(uint64(0))
 var typeOfUint32 = reflect.TypeOf(uint32(0))
 var typeOfString = reflect.TypeOf("")
 
@@ -94,6 +94,12 @@ func (p *PropertyValue) ValueLength(b []byte) (length int, bytesRead int) {
 	t := GetTag()
 	defer t.Release()
 	bytesRead = t.DecodeTag(b)
+	if bytesRead == 0 {
+		return 0, 0
+	}
+	if t.TagNumber == TagNull || t.TagNumber == TagBoolean {
+		return 0, bytesRead
+	}
 	return t.LenValue, bytesRead
 }
 
@@ -202,7 +208,7 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 
 	case TagOctetString:
 		if byteVal, ok := p.Value.([]byte); ok {
-			tag.LenValue = 4
+			tag.LenValue = len(byteVal)
 			if _, err := buff.Write(tag.EncodeTag()); err != nil {
 				return nil, err
 			} else if _, err := buff.Write(byteVal); err != nil {
@@ -232,13 +238,12 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 
 	case TagBitString:
 		if byteVal, ok := p.Value.(BitString); ok {
-			tag.LenValue = len(byteVal)
-
 			bsBytes, err := byteVal.MarshalBinary()
 
 			if err != nil {
 				return nil, err
 			}
+			tag.LenValue = len(bsBytes)
 
 			if _, err := buff.Write(tag.EncodeTag()); err != nil {
 				return nil, err
@@ -250,7 +255,14 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 		}
 
 	case TagDate:
-		if dateVal, ok := p.Value.(*Date); ok {
+		var dateVal *Date
+		switch value := p.Value.(type) {
+		case *Date:
+			dateVal = value
+		case Date:
+			dateVal = &value
+		}
+		if dateVal != nil {
 			tag.LenValue = 4
 			dateBytes, err := dateVal.MarshalBinary()
 
@@ -268,7 +280,14 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 		}
 
 	case TagTime:
-		if timeVal, ok := p.Value.(*Time); ok {
+		var timeVal *Time
+		switch value := p.Value.(type) {
+		case *Time:
+			timeVal = value
+		case Time:
+			timeVal = &value
+		}
+		if timeVal != nil {
 			tag.LenValue = 4
 
 			timeBytes, err := timeVal.MarshalBinary()
@@ -287,7 +306,14 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 		}
 
 	case TagObjectId:
-		if objIdVal, ok := p.Value.(*ObjectId); ok {
+		var objIdVal *ObjectId
+		switch value := p.Value.(type) {
+		case *ObjectId:
+			objIdVal = value
+		case ObjectId:
+			objIdVal = &value
+		}
+		if objIdVal != nil {
 			tag.LenValue = 4
 			objIdBytes, err := objIdVal.MarshalBinary()
 
@@ -303,16 +329,14 @@ func (p *PropertyValue) MarshalBinary() (b []byte, err error) {
 		} else {
 			return nil, invalidVal(p)
 		}
+	default:
+		return nil, fmt.Errorf("unsupported application tag: %d", p.Type)
 	}
 
 	return buff.Bytes(), nil
 }
 
 func (p *PropertyValue) UnmarshalBinary(b []byte) (err error) {
-	if b == nil {
-		return errors.New("received a nil byte slice")
-	}
-
 	if len(b) == 0 {
 		return errors.New("received an empty byte slice")
 	}
@@ -323,10 +347,25 @@ func (p *PropertyValue) UnmarshalBinary(b []byte) (err error) {
 	t = GetTag()
 	defer t.Release()
 	r = t.DecodeTag(b)
+	if r == 0 {
+		return errors.New("malformed application tag")
+	}
+	if t.Context || t.Opening || t.Closing {
+		return errors.New("expected an application tag")
+	}
 	p.Type = t.TagNumber
+	payloadLength := t.LenValue
+	if p.Type == TagNull || p.Type == TagBoolean {
+		payloadLength = 0
+	}
+	if payloadLength < 0 || len(b)-r < payloadLength {
+		return errors.New("application value is truncated")
+	}
+	payload := b[r : r+payloadLength]
 
 	switch p.Type {
 	case TagNull:
+		p.Value = nil
 		return nil
 
 	case TagBoolean:
@@ -334,59 +373,68 @@ func (p *PropertyValue) UnmarshalBinary(b []byte) (err error) {
 		return nil
 
 	case TagUnsigned, TagEnumerated:
-		p.Value = DecodeVarUint(b[r:])
+		if payloadLength < 1 || payloadLength > 4 {
+			return errors.New("unsigned value expects between 1 and 4 octets")
+		}
+		p.Value = DecodeVarUint(payload)
 		return nil
 
 	case TagSigned:
-		p.Value = DecodeVarInt(b[r:])
+		if payloadLength < 1 || payloadLength > 4 {
+			return errors.New("signed value expects between 1 and 4 octets")
+		}
+		p.Value = DecodeVarInt(payload)
 		return nil
 
 	case TagReal:
 		val := Real(0)
-		err = val.UnmarshalBinary(b[r:])
+		err = val.UnmarshalBinary(payload)
 		p.Value = val
 		return err
 
 	case TagDouble:
 		val := Double(0)
-		err = val.UnmarshalBinary(b[r:])
+		err = val.UnmarshalBinary(payload)
 		p.Value = val
 		return err
 
 	case TagOctetString:
-		p.Value = b[r:]
+		p.Value = append([]byte(nil), payload...)
 		return nil
 
 	case TagCharacterString:
 		val := CharacterString{}
-		err = val.UnmarshalBinary(b[r:])
+		err = val.UnmarshalBinary(payload)
 		p.Value = val
 		return err
 
 	case TagBitString:
 		val := BitString{}
-		err = val.UnmarshalBinary(b[r:])
+		err = val.UnmarshalBinary(payload)
 		p.Value = val
 		return err
 
 	case TagDate:
 		val := Date{}
-		err = val.UnmarshalBinary(b[r:])
+		if payloadLength != 4 {
+			return errors.New("date expects 4 octets")
+		}
+		err = val.UnmarshalBinary(payload)
 		p.Value = val
 		return err
 
 	case TagTime:
 		val := Time{}
-		err = val.UnmarshalBinary(b[r:])
+		err = val.UnmarshalBinary(payload)
 		p.Value = val
 		return err
 
 	case TagObjectId:
 		val := ObjectId{}
-		err = val.UnmarshalBinary(b[r:])
+		err = val.UnmarshalBinary(payload)
 		p.Value = val
 		return err
 	}
 
-	return nil
+	return fmt.Errorf("unsupported application tag: %d", p.Type)
 }

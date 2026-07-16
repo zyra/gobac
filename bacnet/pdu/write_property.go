@@ -1,6 +1,8 @@
 package pdu
 
 import (
+	"errors"
+
 	"github.com/zyra/gobac/bacnet/types"
 )
 
@@ -10,6 +12,12 @@ type WriteProperty struct {
 }
 
 func (p *WriteProperty) MarshalBinary() (b []byte, err error) {
+	if p.Property == nil {
+		return nil, errors.New("property is required")
+	}
+	if p.Priority > 16 {
+		return nil, errors.New("write priority must be between 1 and 16")
+	}
 	propBytes, err := p.Property.MarshalBinary()
 
 	if err != nil {

@@ -31,7 +31,7 @@ func (t Time) MarshalBinary() ([]byte, error) {
 }
 
 func (t *Time) UnmarshalBinary(data []byte) error {
-	if len(data) < 4 {
+	if len(data) != 4 {
 		return errors.New("time binary must have 4 octets")
 	}
 

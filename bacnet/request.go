@@ -36,16 +36,28 @@ type Request struct {
 	//done   chan struct{}
 	//err    chan error
 	Sender *net.UDPAddr
+
+	server             *Server
+	invokeAddress      net.IP
+	unconfirmedService types.UnconfirmedService
+	unconfirmedToken   uint64
 }
 
 func (r *Request) Reset() {
-	r.Header.ProtocolType = types.BACnetProtocol
+	*r.Header = types.Header{ProtocolType: types.BACnetProtocol}
 	r.Npci.Reset()
-	r.Apdu.MaxSegments = 0
-	r.Apdu.MaxApdu = types.MaxApdu
+	*r.Apdu = pdu.Apdu{MaxApdu: types.MaxApdu}
+	r.tx = nil
+	r.Sender = nil
+	r.server = nil
+	r.invokeAddress = nil
+	r.unconfirmedService = 0
+	r.unconfirmedToken = 0
 }
 
 func (r *Request) Release() {
+	r.cleanupTransaction()
+	r.releaseQueuedResponses()
 	r.Reset()
 	reqPool.Put(r)
 }
@@ -55,24 +67,38 @@ func NewRequest() *Request {
 }
 
 func ParseRequest(b []byte, sender *net.UDPAddr) (*Request, error) {
+	if sender == nil {
+		return nil, errors.New("sender cannot be nil")
+	}
 	req := NewRequest()
 	req.Sender = sender
-	return req, req.UnmarshalBinary(b)
+	if err := req.UnmarshalBinary(b); err != nil {
+		req.Release()
+		return nil, err
+	}
+	return req, nil
 }
 
 func (r *Request) SetConfirmedService(choice types.ConfirmedService, data encoding.BinaryMarshaler, address net.IP) {
+	r.cleanupTransaction()
+	r.releaseQueuedResponses()
+	r.Reset()
 	r.Apdu.ServiceChoice = choice
 	r.Apdu.PduType = types.PduTypeConfirmedServiceRequest
 	r.Apdu.RequestData = data
 	r.Header.Function = types.BvlcFunctionOriginalUnicastNpdu
 	r.Npci.IsConfirmed = true
 	r.Npci.ExpectingReply = true
-	r.Apdu.InvokeID = GetInvokeID(address)
-	r.tx = make(chan *Request)
+	r.Apdu.InvokeID, _ = TryGetInvokeID(address)
+	r.invokeAddress = append(net.IP(nil), address...)
+	r.tx = make(chan *Request, 1)
 	//r.err = make(chan error)
 }
 
 func (r *Request) SetUnconfirmedService(choice types.UnconfirmedService, data encoding.BinaryMarshaler) {
+	r.cleanupTransaction()
+	r.releaseQueuedResponses()
+	r.Reset()
 	r.Apdu.ServiceChoice = choice
 	r.Apdu.PduType = types.PduTypeUnconfirmedServiceRequest
 	r.Apdu.RequestData = data
@@ -99,12 +125,18 @@ func (r *Request) ServiceChoice() uint8 {
 }
 
 func (r *Request) Broadcast(server *Server, responseChoice types.UnconfirmedService) error {
+	if server == nil {
+		return errors.New("server cannot be nil")
+	}
 	if data, err := r.MarshalBinary(); err != nil {
 		return err
 	} else {
-		server.SetUnconfirmedHandler(responseChoice, r.tx)
+		r.server = server
+		r.unconfirmedService = responseChoice
+		r.unconfirmedToken = server.addUnconfirmedHandler(responseChoice, r.tx)
 
 		if err := server.Send(data, server.GetBroadcastAddr()); err != nil {
+			r.cleanupTransaction()
 			return err
 		}
 	}
@@ -113,19 +145,65 @@ func (r *Request) Broadcast(server *Server, responseChoice types.UnconfirmedServ
 }
 
 func (r *Request) Send(dest net.IP, server *Server) error {
+	if server == nil {
+		r.cleanupTransaction()
+		return errors.New("server cannot be nil")
+	}
+	if dest == nil {
+		r.cleanupTransaction()
+		return errors.New("destination cannot be nil")
+	}
+	if r.InvokeID() == 0 {
+		return ErrInvokeIDExhausted
+	}
+
 	destUdp := getUdpAddr(dest, server.GetBroadcastPort())
 
 	if data, err := r.MarshalBinary(); err != nil {
+		r.cleanupTransaction()
 		return err
 	} else {
-		server.SetConfirmedHandler(dest, r.InvokeID(), r.tx)
+		r.server = server
+		server.setConfirmedHandlerForService(dest, r.InvokeID(), types.ConfirmedService(r.ServiceChoice()), r.tx)
 
 		if err := server.Send(data, destUdp); err != nil {
+			r.cleanupTransaction()
 			return err
 		}
 	}
 
 	return nil
+}
+
+func (r *Request) releaseQueuedResponses() {
+	if r.tx == nil {
+		return
+	}
+	for {
+		select {
+		case response := <-r.tx:
+			if response != nil && response != r {
+				response.Release()
+			}
+		default:
+			return
+		}
+	}
+}
+
+func (r *Request) cleanupTransaction() {
+	if r.server != nil && r.InvokeID() != 0 && r.invokeAddress != nil {
+		r.server.RemoveConfirmedHandler(r.invokeAddress, r.InvokeID())
+	}
+	if r.InvokeID() != 0 && r.invokeAddress != nil {
+		ReleaseInvokeID(r.invokeAddress, r.InvokeID())
+	}
+	if r.server != nil && r.unconfirmedToken != 0 {
+		r.server.removeUnconfirmedHandler(r.unconfirmedService, r.unconfirmedToken)
+	}
+	r.server = nil
+	r.invokeAddress = nil
+	r.unconfirmedToken = 0
 }
 
 func (r *Request) Data() <-chan *Request {
@@ -184,6 +262,13 @@ func (r *Request) MarshalBinary() ([]byte, error) {
 
 	commonApduLen := len(apduCommonBytes)
 	npciLen := len(npciBytes)
+	if commonApduLen > types.MaxApdu {
+		return nil, errors.New("APDU exceeds the unsegmented maximum")
+	}
+	totalLength := 4 + commonApduLen + npciLen
+	if totalLength > int(^uint16(0)) {
+		return nil, errors.New("BACnet/IP datagram exceeds the BVLC length field")
+	}
 
 	r.Header.NsduLength = types.Uint16(commonApduLen + npciLen)
 	r.Header.BvlcLength = r.Header.NsduLength + 4
@@ -216,8 +301,11 @@ func (r *Request) UnmarshalBinary(b []byte) error {
 	if err := r.Header.UnmarshalBinary(buff.Next(4)); err != nil {
 		return err
 	}
+	if int(r.Header.BvlcLength) != len(b) {
+		return errors.New("BVLC length does not match datagram length")
+	}
 
-	if b := buff.Bytes(); len(b) < int(r.Header.NsduLength) {
+	if b := buff.Bytes(); len(b) != int(r.Header.NsduLength) {
 		return errors.New("byte slice is too short")
 	} else if err := r.Npci.UnmarshalBinary(buff.Bytes()); err != nil {
 		return err
