@@ -1,7 +1,9 @@
 package simulator
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"net"
 	"testing"
 	"time"
@@ -354,6 +356,195 @@ func TestApplicationPrunesExpiredSubscriberEndpoints(t *testing.T) {
 	}
 	if len(application.subscribers) != 0 {
 		t.Fatalf("subscriber endpoints = %d", len(application.subscribers))
+	}
+}
+
+func TestHandleWhoIsRangeFiltering(t *testing.T) {
+	application := NewApplication(applicationTestDevice(), RealClock{})
+	destination := transport.NewEndpoint(net.IPv4(192, 0, 2, 20), 47808)
+
+	buildPayload := func(low, high uint32) []byte {
+		var payload bytes.Buffer
+		writeContext(&payload, 0, types.EncodeVarUint(low))
+		writeContext(&payload, 1, types.EncodeVarUint(high))
+		return payload.Bytes()
+	}
+
+	invoke := func(payload []byte) ([]responder.Response, error) {
+		request := bacnet.NewRequest()
+		defer request.Release()
+		request.Apdu.Payload = payload
+		return application.handleWhoIs(context.Background(), &responder.Request{Packet: request, Destination: destination})
+	}
+
+	// Out-of-range Who-Is (device 70000 is above the queried range): no I-Am at all.
+	responses, err := invoke(buildPayload(1, 100))
+	if err != nil || len(responses) != 0 {
+		t.Fatalf("out-of-range Who-Is responses = %+v, err = %v, want none", responses, err)
+	}
+
+	// Exact boundary match: low == high == device ID.
+	responses, err = invoke(buildPayload(70000, 70000))
+	if err != nil || len(responses) != 1 {
+		t.Fatalf("boundary Who-Is responses = %+v, err = %v, want 1", responses, err)
+	}
+	if responses[0].PDUType != types.PduTypeUnconfirmedServiceRequest || responses[0].ServiceChoice != types.UnconfirmedServiceIAm || responses[0].Broadcast != true {
+		t.Fatalf("boundary Who-Is response = %+v", responses[0])
+	}
+
+	// Range entirely above the device ID: no I-Am (covers the "> *high" side already; this covers "< *low").
+	responses, err = invoke(buildPayload(70001, 80000))
+	if err != nil || len(responses) != 0 {
+		t.Fatalf("above-range Who-Is responses = %+v, err = %v, want none", responses, err)
+	}
+
+	// Empty (unlimited) Who-Is must still answer.
+	responses, err = invoke(nil)
+	if err != nil || len(responses) != 1 {
+		t.Fatalf("unlimited Who-Is responses = %+v, err = %v, want 1", responses, err)
+	}
+}
+
+func TestReadPropertyModelErrorMapping(t *testing.T) {
+	device := applicationTestDevice()
+	application := NewApplication(device, RealClock{})
+	objectID := ObjectID{Type: uint16(types.ObjectTypeAnalogValue), Instance: 1}
+	requestObjectID, err := toBACnetObjectID(objectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unknownObjectID, err := toBACnetObjectID(ObjectID{Type: uint16(types.ObjectTypeAnalogValue), Instance: 99})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A commandable fixture (RelinquishDefault set) synthesizes Priority_Array (87) at read
+	// time (Task 6); index 17 is out of range for the 16-slot array.
+	commandableObjectID := ObjectID{Type: uint16(types.ObjectTypeAnalogOutput), Instance: 1}
+	defaultValue := Value{Tag: types.TagReal, Value: float32(0)}
+	commandableDevice := &Device{
+		ID: 70004,
+		Objects: map[ObjectID]*Object{
+			commandableObjectID: {
+				ID: commandableObjectID,
+				Properties: map[uint32]*Property{
+					uint32(types.PropertyPresentValue): {
+						ID:                uint32(types.PropertyPresentValue),
+						Writable:          true,
+						Scalar:            true,
+						ExpectedTag:       types.TagReal,
+						RelinquishDefault: &defaultValue,
+					},
+				},
+			},
+		},
+	}
+	commandableApplication := NewApplication(commandableDevice, RealClock{})
+	commandableObjectIDBACnet, err := toBACnetObjectID(commandableObjectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	unknownObjectPayload, err := (&types.Property{ObjectId: unknownObjectID, ID: types.PropertyPresentValue}).MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	unknownPropertyPayload, err := (&types.Property{ObjectId: requestObjectID, ID: types.PropertyId(999)}).MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	notArrayPayload, err := (&types.Property{ObjectId: requestObjectID, ID: types.PropertyPresentValue, HasIndex: true, Index: 1}).MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	invalidArrayIndexPayload, err := (&types.Property{ObjectId: commandableObjectIDBACnet, ID: types.PropertyPriorityArray, HasIndex: true, Index: 17}).MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		name      string
+		app       *Application
+		payload   []byte
+		wantClass types.ErrorClass
+		wantCode  types.ErrorCode
+	}{
+		{"unknown object", application, unknownObjectPayload, types.ErrorClassObject, types.ErrorCodeUnknownObject},
+		{"unknown property", application, unknownPropertyPayload, types.ErrorClassProperty, types.ErrorCodeUnknownProperty},
+		{"property not array", application, notArrayPayload, types.ErrorClassProperty, types.ErrorCodePropertyIsNotAnArray},
+		{"invalid array index", commandableApplication, invalidArrayIndexPayload, types.ErrorClassProperty, types.ErrorCodeInvalidArrayIndex},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			request := bacnet.NewRequest()
+			defer request.Release()
+			request.Apdu.Payload = tc.payload
+			responses, err := tc.app.handleReadProperty(context.Background(), &responder.Request{Packet: request})
+			if err != nil || len(responses) != 1 || responses[0].PDUType != types.PduTypeError {
+				t.Fatalf("%s: responses = %+v, err = %v", tc.name, responses, err)
+			}
+			if responses[0].ErrorClass != tc.wantClass || responses[0].ErrorCode != tc.wantCode {
+				t.Fatalf("%s: error = %+v, want class=%v code=%v", tc.name, responses[0], tc.wantClass, tc.wantCode)
+			}
+		})
+	}
+}
+
+func TestWritePropertyValueOutOfRangeMapping(t *testing.T) {
+	objectID := ObjectID{Type: uint16(types.ObjectTypeAnalogValue), Instance: 1}
+	device := &Device{
+		ID: 70005,
+		Objects: map[ObjectID]*Object{
+			objectID: {
+				ID: objectID,
+				Properties: map[uint32]*Property{
+					uint32(types.PropertyPresentValue): {
+						ID:              uint32(types.PropertyPresentValue),
+						Scalar:          true,
+						ExpectedTag:     types.TagUnsigned,
+						MinimumUnsigned: 1,
+						MaximumUnsigned: 3,
+						Writable:        true,
+					},
+				},
+			},
+		},
+	}
+	application := NewApplication(device, RealClock{})
+
+	payload, err := encodeReadPropertyResult(objectID, PropertyReference{ID: uint32(types.PropertyPresentValue)}, []Value{{Tag: types.TagUnsigned, Value: uint32(4)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	request := bacnet.NewRequest()
+	defer request.Release()
+	request.Apdu.Payload = payload
+	responses, err := application.handleWriteProperty(context.Background(), &responder.Request{Packet: request})
+	if err != nil || len(responses) != 1 || responses[0].PDUType != types.PduTypeError {
+		t.Fatalf("responses = %+v, err = %v", responses, err)
+	}
+	if responses[0].ErrorClass != types.ErrorClassProperty || responses[0].ErrorCode != types.ErrorCodeValueOutOfRange {
+		t.Fatalf("error = %+v, want class=%v code=%v", responses[0], types.ErrorClassProperty, types.ErrorCodeValueOutOfRange)
+	}
+}
+
+func TestModelErrorDefaultBranch(t *testing.T) {
+	defaultResponse := modelError(errors.New("unmapped"))
+	if defaultResponse.PDUType != types.PduTypeError || defaultResponse.ErrorClass != types.ErrorClassServices || defaultResponse.ErrorCode != types.ErrorCodeServiceRequestDenied {
+		t.Fatalf("default mapping = %+v", defaultResponse)
+	}
+
+	unknownObjectResponse := modelError(ErrUnknownObject)
+	if unknownObjectResponse.PDUType != types.PduTypeError || unknownObjectResponse.ErrorClass != types.ErrorClassObject || unknownObjectResponse.ErrorCode != types.ErrorCodeUnknownObject {
+		t.Fatalf("ErrUnknownObject mapping = %+v", unknownObjectResponse)
+	}
+
+	invalidArrayIndexResponse := modelError(ErrInvalidArrayIndex)
+	if invalidArrayIndexResponse.PDUType != types.PduTypeError || invalidArrayIndexResponse.ErrorClass != types.ErrorClassProperty || invalidArrayIndexResponse.ErrorCode != types.ErrorCodeInvalidArrayIndex {
+		t.Fatalf("ErrInvalidArrayIndex mapping = %+v", invalidArrayIndexResponse)
 	}
 }
 
