@@ -3,11 +3,12 @@ package types
 type ConfirmedService = uint8
 
 const (
-	ConfirmedServiceReadProperty         ConfirmedService = 12
-	ConfirmedServiceReadPropertyMultiple ConfirmedService = 14
-	ConfirmedServiceWriteProperty        ConfirmedService = 15
-	ConfirmedServiceSubscribeCov         ConfirmedService = 5
-	ConfirmedServiceCovNotification      ConfirmedService = 1
+	ConfirmedServiceReadProperty          ConfirmedService = 12
+	ConfirmedServiceReadPropertyMultiple  ConfirmedService = 14
+	ConfirmedServiceWriteProperty         ConfirmedService = 15
+	ConfirmedServiceWritePropertyMultiple ConfirmedService = 16
+	ConfirmedServiceSubscribeCov          ConfirmedService = 5
+	ConfirmedServiceCovNotification       ConfirmedService = 1
 )
 
 type UnconfirmedService = uint8

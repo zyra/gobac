@@ -146,11 +146,18 @@ func (a *Apdu) MarshalBinary() ([]byte, error) {
 		buff.WriteByte(first)
 		buff.WriteByte(a.InvokeID)
 		buff.WriteByte(a.ServiceChoice)
-		for _, value := range []uint32{uint32(a.ErrorClass), uint32(a.ErrorCode)} {
-			encoded := types.EncodeVarUint(value)
-			tag := types.Tag{TagNumber: types.TagEnumerated, LenValue: len(encoded)}
-			buff.Write(tag.EncodeTag())
-			buff.Write(encoded)
+		if len(a.Payload) > 0 {
+			// A caller-supplied payload replaces the generic errorType
+			// encoding below, e.g. the WritePropertyMultiple-Error
+			// production, whose errorType is itself context-tagged.
+			buff.Write(a.Payload)
+		} else {
+			for _, value := range []uint32{uint32(a.ErrorClass), uint32(a.ErrorCode)} {
+				encoded := types.EncodeVarUint(value)
+				tag := types.Tag{TagNumber: types.TagEnumerated, LenValue: len(encoded)}
+				buff.Write(tag.EncodeTag())
+				buff.Write(encoded)
+			}
 		}
 	case types.PduTypeReject:
 		buff.WriteByte(first)
@@ -312,6 +319,22 @@ func (a *Apdu) UnmarshalBinary(b []byte) error {
 			return err
 		}
 		a.ServiceChoice = service
+
+		if a.ServiceChoice == types.ConfirmedServiceWritePropertyMultiple && offset < len(b) {
+			peek := &types.Tag{}
+			if peek.DecodeTag(b[offset:]) > 0 && peek.IsContext(0) && peek.Opening {
+				wpmError := &WritePropertyMultipleError{}
+				if err := wpmError.UnmarshalBinary(b[offset:]); err != nil {
+					return err
+				}
+				a.ErrorClass = wpmError.Class
+				a.ErrorCode = wpmError.Code
+				a.ResponseData = wpmError
+				a.Payload = append([]byte(nil), b[offset:]...)
+				return nil
+			}
+		}
+
 		values := []*uint32{new(uint32), new(uint32)}
 		for _, value := range values {
 			if offset >= len(b) {

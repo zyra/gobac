@@ -101,6 +101,50 @@ func TestErrorApduDecoding(t *testing.T) {
 	}
 }
 
+func TestErrorApduDecodingWritePropertyMultiple(t *testing.T) {
+	// Hand-built WritePropertyMultiple-Error production: errorClass Property
+	// (2), errorCode WriteAccessDenied (40), firstFailedWriteAttempt =
+	// BinaryValue:2 / property 85.
+	wire := []byte{
+		0x50, 0x7e, byte(types.ConfirmedServiceWritePropertyMultiple),
+		0x0e,       // [0] opening (errorType)
+		0x91, 0x02, //   errorClass Property(2)
+		0x91, 0x28, //   errorCode WriteAccessDenied(40)
+		0x0f, // [0] closing
+
+		0x1e,                         // [1] opening (firstFailedWriteAttempt)
+		0x0c, 0x01, 0x40, 0x00, 0x02, //   [0] objectIdentifier BV:2
+		0x19, 0x55, //   [1] propertyIdentifier 85
+		0x1f, // [1] closing
+	}
+
+	var apdu Apdu
+	if err := apdu.UnmarshalBinary(wire); err != nil {
+		t.Fatal(err)
+	}
+	if !apdu.Errored || apdu.InvokeID != 0x7e || apdu.ServiceChoice != types.ConfirmedServiceWritePropertyMultiple {
+		t.Fatalf("decoded error APDU incorrectly: %+v", apdu)
+	}
+	if apdu.ErrorClass != types.ErrorClassProperty || apdu.ErrorCode != types.ErrorCodeWriteAccessDenied {
+		t.Fatalf("decoded class/code = %v/%v", apdu.ErrorClass, apdu.ErrorCode)
+	}
+
+	wpmError, ok := apdu.ResponseData.(*WritePropertyMultipleError)
+	if !ok {
+		t.Fatalf("ResponseData = %T, want *WritePropertyMultipleError", apdu.ResponseData)
+	}
+	if wpmError.Class != types.ErrorClassProperty || wpmError.Code != types.ErrorCodeWriteAccessDenied {
+		t.Fatalf("wpmError class/code = %v/%v", wpmError.Class, wpmError.Code)
+	}
+	wantObject := types.ObjectId{Type: types.ObjectTypeBinaryValue, Instance: 2}
+	if wpmError.FirstFailed.ObjectId == nil || *wpmError.FirstFailed.ObjectId != wantObject {
+		t.Fatalf("wpmError firstFailed object = %+v, want %+v", wpmError.FirstFailed.ObjectId, wantObject)
+	}
+	if wpmError.FirstFailed.ID != 85 || wpmError.FirstFailed.HasIndex {
+		t.Fatalf("wpmError firstFailed property = %+v", wpmError.FirstFailed)
+	}
+}
+
 func TestUnconfirmedCovNotificationIsDecoded(t *testing.T) {
 	payload := []byte{
 		0x09, 1,
