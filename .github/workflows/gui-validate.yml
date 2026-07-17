@@ -1,0 +1,92 @@
+name: GUI Validate
+
+on:
+  push:
+    paths:
+      - 'gui/**'
+      - 'go.mod'
+      - 'bacnet/**'
+      - 'simulator/**'
+      - '.github/workflows/gui-validate.yml'
+  pull_request:
+    paths:
+      - 'gui/**'
+      - 'go.mod'
+      - 'bacnet/**'
+      - 'simulator/**'
+      - '.github/workflows/gui-validate.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: 1.24.x
+
+      - name: Install Fyne build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libgl1-mesa-dev xorg-dev
+
+      - name: Alias loopback address for simulator tests (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          sudo ifconfig lo0 alias 127.0.0.2 up
+          ok=false
+          for i in $(seq 1 10); do
+            if ping -c 1 127.0.0.2 >/dev/null 2>&1; then
+              ok=true
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ok" != true ]; then
+            echo "Loopback alias 127.0.0.2 did not become reachable" >&2
+            exit 1
+          fi
+
+      # Windows does not route all of 127.0.0.0/8 to loopback the way Linux
+      # does, so the simulator tests' 127.0.0.2 device address (see
+      # simDeviceIP in gui/internal/session/simharness_test.go) needs an
+      # explicit alias here too, matching the macOS step above. See
+      # gui-architecture.md §10.A for the owner-approved rationale.
+      - name: Alias loopback address for simulator tests (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          netsh interface ipv4 add address "Loopback Pseudo-Interface 1" 127.0.0.2 255.0.0.0
+          $ok = $false
+          for ($i = 0; $i -lt 10; $i++) {
+            ping -n 1 127.0.0.2 | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+              $ok = $true
+              break
+            }
+            Start-Sleep -Seconds 1
+          }
+          if (-not $ok) {
+            Write-Error "Loopback alias 127.0.0.2 did not become reachable"
+            exit 1
+          }
+
+      - name: Vet
+        working-directory: gui
+        run: go vet ./...
+
+      - name: Test (race)
+        working-directory: gui
+        run: go test -race -count=1 ./...
+
+      - name: Build
+        working-directory: gui
+        run: go build ./...

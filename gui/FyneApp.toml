@@ -1,0 +1,6 @@
+[Details]
+Icon = "assets/icon.png"
+Name = "GoBAC Workstation"
+ID = "com.zyra.gobac.gui"
+Version = "0.1.0"
+Build = 1
