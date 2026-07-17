@@ -200,10 +200,23 @@ func (l *Live) Write(ctx context.Context, dev Address, obj ObjectRef, w WriteReq
 		return errSessionNotStarted
 	}
 
+	// The wire encoder requires a types.CharacterString for a
+	// CharacterString-tagged value (a strict type assertion, no reflection
+	// fallback — see bacnet/types/property_value.go's MarshalBinary), but
+	// the facade only ever carries a plain string (see toValue below and
+	// ui.ParseWriteValue). Wrap it here so callers of this facade never
+	// need to import bacnet/types.
+	value := w.Value
+	if w.Tag == types.TagCharacterString {
+		if s, ok := value.(string); ok {
+			value = types.CharacterString{Value: s}
+		}
+	}
+
 	// TODO(L2): swap to srv.WriteObjectProperty (22-bit instance) once
 	// library task L2 merges; this is otherwise a one-line change.
 	return srv.WriteProperty(ctx, dev.IP, types.Uint16(obj.Type), types.Uint16(obj.Instance),
-		types.PropertyId(types.PropertyPresentValue), w.Tag, w.Priority, w.Value)
+		types.PropertyId(types.PropertyPresentValue), w.Tag, w.Priority, value)
 }
 
 // toValue converts a decoded wire property value into the facade Value
@@ -219,6 +232,22 @@ func toValue(v *types.PropertyValue) Value {
 		value = float64(typed)
 	case types.CharacterString:
 		value = typed.Value
+	case types.ObjectId:
+		value = ObjectRef{Type: uint16(typed.Type), Instance: typed.InstanceNumber()}
+	case types.BitString:
+		// Expand each wire octet into its 8 constituent bits (MSB first).
+		// The library's BitString type discards the wire's unused-bit
+		// count once decoded, so trailing padding bits cannot be trimmed
+		// here; exact bit-count fidelity for partial-octet bit strings
+		// (e.g. the 4-bit Status_Flags) is deferred to library task L7
+		// (simulator/property realism), which is out of Wave-1 scope.
+		bits := make([]bool, 0, len(typed)*8)
+		for _, b := range typed {
+			for i := 7; i >= 0; i-- {
+				bits = append(bits, (b>>uint(i))&1 != 0)
+			}
+		}
+		value = bits
 	}
 	return Value{Tag: v.Type, Value: value}
 }

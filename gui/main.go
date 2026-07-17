@@ -10,9 +10,12 @@ import (
 	"github.com/zyra/gobac/gui/internal/ui"
 )
 
-// discoveryNavIndex is the AppShell nav index of the Discovery view (see
-// navLabels in internal/ui/shell.go).
-const discoveryNavIndex = 0
+// discoveryNavIndex and browserNavIndex are the AppShell nav indices of the
+// Discovery and Object Browser views (see navLabels in internal/ui/shell.go).
+const (
+	discoveryNavIndex = 0
+	browserNavIndex   = 1
+)
 
 func main() {
 	a := app.NewWithID("com.zyra.gobac.gui")
@@ -25,7 +28,22 @@ func main() {
 
 	sess := session.NewLive()
 	devices := store.NewDeviceStore()
-	shell.SetView(discoveryNavIndex, ui.NewDiscoveryView(sess, devices, shell))
+	objects := store.NewObjectCache()
+
+	discovery := ui.NewDiscoveryView(sess, devices, shell)
+	shell.SetView(discoveryNavIndex, discovery)
+
+	browser := ui.NewBrowserView(sess, objects, shell)
+	shell.SetView(browserNavIndex, browser)
+
+	if discoveryView, ok := discovery.(*ui.DiscoveryView); ok {
+		if browserView, ok := browser.(*ui.BrowserView); ok {
+			discoveryView.OnSelect = func(row store.DeviceRow) {
+				browserView.LoadDevice(row)
+				shell.Nav.Select(browserNavIndex)
+			}
+		}
+	}
 
 	window.SetContent(shell)
 	window.ShowAndRun()
