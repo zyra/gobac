@@ -269,6 +269,24 @@ func (d *Device) ValidateWrite(id ObjectID, propertyID uint32, values []Value, p
 	return err
 }
 
+// SetLocalTime records a TimeSynchronization / UTCTimeSynchronization sync
+// onto the device object's Local_Date (56) and Local_Time (57) properties,
+// creating them on first sync (buildDevice intentionally leaves them absent
+// until then). The simulator has no UTC-offset model, so
+// UTCTimeSynchronization values are stored exactly as received, the same as
+// a local TimeSynchronization.
+func (d *Device) SetLocalTime(date types.Date, clock types.Time) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	deviceID := ObjectID{Type: uint16(types.ObjectTypeDevice), Instance: d.ID}
+	object := d.Objects[deviceID]
+	if object == nil {
+		return
+	}
+	object.Properties[uint32(types.PropertyLocalDate)] = scalarProperty(uint32(types.PropertyLocalDate), types.TagDate, date, false)
+	object.Properties[uint32(types.PropertyLocalTime)] = scalarProperty(uint32(types.PropertyLocalTime), types.TagTime, clock, false)
+}
+
 func (d *Device) WriteProperty(id ObjectID, propertyID uint32, values []Value, priority uint8) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()

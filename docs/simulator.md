@@ -33,6 +33,7 @@ Broadcast behavior depends on the host network configuration. Multi-IP scenarios
 - WritePropertyMultiple with atomic validate-then-apply semantics and the standard WritePropertyMultiple-Error on failure
 - ReadPropertyMultiple with per-property values or errors and the `ALL` selector
 - SubscribeCOV registration, renewal, cancellation, expiry, initial notification, and notification after successful writes
+- TimeSynchronization and UTCTimeSynchronization, storing the received date and time onto the device's Local_Date and Local_Time properties (readable only after a sync; the simulator has no UTC-offset model, so UTCTimeSynchronization values are stored exactly as received)
 - Device, analog, binary, and multi-state object scenarios
 - Deterministic manual clocks for subscription tests
 

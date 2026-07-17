@@ -168,6 +168,14 @@ func decodeWhoHas(data []byte) (*pdu.WhoHas, error) {
 	return query, nil
 }
 
+func decodeTimeSync(data []byte) (*pdu.TimeSyncPdu, error) {
+	sync := &pdu.TimeSyncPdu{}
+	if err := sync.UnmarshalBinary(data); err != nil {
+		return nil, err
+	}
+	return sync, nil
+}
+
 func encodeIHave(device *Device, object *Object) ([]byte, error) {
 	if device == nil {
 		return nil, errors.New("device is required")

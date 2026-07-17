@@ -14,9 +14,11 @@ const (
 type UnconfirmedService = uint8
 
 const (
-	UnconfirmedServiceIAm             UnconfirmedService = 0
-	UnconfirmedServiceIHave           UnconfirmedService = 1
-	UnconfirmedServiceCovNotification UnconfirmedService = 0x2
-	UnconfirmedServiceWhoHas          UnconfirmedService = 7
-	UnconfirmedServiceWhoIs           UnconfirmedService = 0x8
+	UnconfirmedServiceIAm                    UnconfirmedService = 0
+	UnconfirmedServiceIHave                  UnconfirmedService = 1
+	UnconfirmedServiceCovNotification        UnconfirmedService = 0x2
+	UnconfirmedServiceTimeSynchronization    UnconfirmedService = 6
+	UnconfirmedServiceWhoHas                 UnconfirmedService = 7
+	UnconfirmedServiceWhoIs                  UnconfirmedService = 0x8
+	UnconfirmedServiceUtcTimeSynchronization UnconfirmedService = 9
 )

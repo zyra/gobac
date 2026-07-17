@@ -36,6 +36,8 @@ func NewApplication(device *Device, clock Clock) *Application {
 func (a *Application) Register(server *responder.Server) {
 	server.Handle(types.PduTypeUnconfirmedServiceRequest, types.UnconfirmedServiceWhoIs, a.handleWhoIs)
 	server.Handle(types.PduTypeUnconfirmedServiceRequest, types.UnconfirmedServiceWhoHas, a.handleWhoHas)
+	server.Handle(types.PduTypeUnconfirmedServiceRequest, types.UnconfirmedServiceTimeSynchronization, a.handleTimeSync)
+	server.Handle(types.PduTypeUnconfirmedServiceRequest, types.UnconfirmedServiceUtcTimeSynchronization, a.handleTimeSync)
 	server.Handle(types.PduTypeConfirmedServiceRequest, types.ConfirmedServiceReadProperty, a.handleReadProperty)
 	server.Handle(types.PduTypeConfirmedServiceRequest, types.ConfirmedServiceWriteProperty, a.handleWriteProperty)
 	server.Handle(types.PduTypeConfirmedServiceRequest, types.ConfirmedServiceWritePropertyMultiple, a.handleWritePropertyMultiple)
@@ -96,6 +98,19 @@ func (a *Application) handleWhoHas(_ context.Context, request *responder.Request
 	return []responder.Response{
 		responder.Unconfirmed(types.UnconfirmedServiceIHave, payload).To(destination).AsBroadcast(),
 	}, nil
+}
+
+// handleTimeSync decodes a TimeSynchronization or UTCTimeSynchronization
+// request and records it onto the device's Local_Date (56) / Local_Time
+// (57) properties. Both services are unconfirmed and get no response; a
+// malformed payload is silently ignored, matching handleWhoIs/handleWhoHas.
+func (a *Application) handleTimeSync(_ context.Context, request *responder.Request) ([]responder.Response, error) {
+	sync, err := decodeTimeSync(request.Packet.Apdu.Payload)
+	if err != nil {
+		return nil, nil
+	}
+	a.Device.SetLocalTime(sync.Date, sync.Time)
+	return nil, nil
 }
 
 func (a *Application) handleReadProperty(_ context.Context, request *responder.Request) ([]responder.Response, error) {
