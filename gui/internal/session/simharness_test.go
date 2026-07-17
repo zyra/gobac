@@ -24,13 +24,15 @@ import (
 // a distinct loopback address avoids that, while staying entirely within
 // 127.0.0.0/8 on an ephemeral port.
 //
-// This is a deviation from plan §6.7 ("UDP-using tests bind only
-// 127.0.0.1"), forced by the library's shared-port addressing model rather
-// than chosen for convenience — see gui-architecture.md §6.7. It needs a
-// plan-owner amendment/escalation, not silent acceptance; gui-validate.yml
-// carries a macOS-only step aliasing 127.0.0.2 onto lo0 to keep this
-// address reachable on that CI leg (macOS does not auto-route all of
-// 127.0.0.0/8 to loopback the way Linux does).
+// This is a deviation from plan §6.7's original text ("UDP-using tests bind
+// only 127.0.0.1"), forced by the library's shared-port addressing model
+// rather than chosen for convenience — see gui-architecture.md §6.7 and its
+// amendment in §10.A (owner-approved 2026-07-17: loopback addresses beyond
+// 127.0.0.1 are allowed provided every CI OS leg that runs the test
+// provisions the alias). gui-validate.yml carries alias-provisioning steps
+// for macOS (`ifconfig lo0 alias`) and Windows (`netsh interface ipv4 add
+// address`) to keep this address reachable on those CI legs; Linux routes
+// all of 127.0.0.0/8 to loopback natively and needs no step.
 const simDeviceIP = "127.0.0.2"
 
 // writableObjectInstance and readOnlyObjectInstance are the analog-value
@@ -39,33 +41,6 @@ const (
 	writableObjectInstance uint32 = 1
 	readOnlyObjectInstance uint32 = 2
 )
-
-// skipUnderRace skips a round-trip test when the binary is built with the
-// Go race detector. Every one of these tests exercises a genuine, confirmed
-// data race inside the vendored library itself (bacnet/server.go:260-263
-// reads req.InvokeID() to release the invoke ID immediately after handing
-// the same *Request to the client's channel, racing the client goroutine's
-// req.Release()->Reset() in bacnet/read_property.go:48 / bacnet/request.go:49
-// and 112). It is not triggered by anything in gui/ and cannot be fixed
-// from this package: constraint §6.1 forbids editing outside gui/, and the
-// race is inside bacnet/, not gui/. Non-race runs (`go test ./...`) still
-// exercise the exact-value assertions in full; only `-race` runs skip.
-//
-// gui-validate.yml runs both `go test -race ./...` and a second, non-race
-// `go test ./...` specifically so these round-trip assertions still execute
-// in every CI leg (they previously ran in none, since CI only invoked
-// -race). That is a mitigation, not a fix: the plan's §6.5/§6.7 gate is
-// "tests must pass with -race", and these still don't run under it. This
-// remains an open blocker pending a library-side fix to bacnet/server.go,
-// or an explicit plan-owner amendment accepting the non-race leg as the
-// verification gate for this package — it should not be treated as
-// silently resolved.
-func skipUnderRace(t *testing.T) {
-	t.Helper()
-	if raceEnabled {
-		t.Skip("skipping under -race: known data race in bacnet/server.go (invoke-ID release vs. request reset) — needs a library-side fix, see gui/internal/session/simharness_test.go:skipUnderRace")
-	}
-}
 
 // startSimDevice builds a minimal one-device scenario in code and serves it
 // over loopback UDP in a background goroutine. It returns the ephemeral
