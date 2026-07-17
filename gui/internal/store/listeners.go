@@ -1,7 +1,7 @@
 // Package store holds thread-safe, observable caches (device discovery
 // results, per-device object/property data) that the UI layer binds to. It
 // has no dependency on Fyne or sockets; it is fed by the session layer and
-// read by the ui layer (see the layering rules in gui-architecture.md §6.3).
+// read by the ui layer (see the layering rules in gui-architecture.md §6).
 package store
 
 import "sync"
