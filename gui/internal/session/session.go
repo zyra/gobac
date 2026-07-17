@@ -49,8 +49,14 @@ type ObjectRef struct {
 // DeviceSummary is the discovery-facing view of a BACnet device, derived
 // from an I-Am response.
 type DeviceSummary struct {
-	Instance     uint32
-	IP           net.IP
+	Instance uint32
+	IP       net.IP
+	// Port is the UDP port the device is reachable at. The library's
+	// client stack always sends requests to the same port it is itself
+	// listening on (Config.Port) — real-world BACnet/IP participants
+	// share one well-known port — so this is the session's own
+	// configured port, not a value decoded from the I-Am response.
+	Port         uint16
 	VendorID     uint32
 	MaxApdu      uint32
 	Segmentation uint32

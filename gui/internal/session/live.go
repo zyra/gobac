@@ -25,8 +25,9 @@ var errSessionNotStarted = errors.New("session not started")
 // Live is the production Session implementation, backed by a real
 // bacnet.Server sending/receiving over UDP.
 type Live struct {
-	mu  sync.Mutex
-	srv *bacnet.Server
+	mu   sync.Mutex
+	srv  *bacnet.Server
+	port uint16
 }
 
 // NewLive creates a Live session. It does nothing network-visible until
@@ -66,6 +67,7 @@ func (l *Live) Start(cfg Config) error {
 
 	l.mu.Lock()
 	l.srv = srv
+	l.port = cfg.Port
 	l.mu.Unlock()
 	return nil
 }
@@ -93,6 +95,13 @@ func (l *Live) server() *bacnet.Server {
 	return l.srv
 }
 
+// listenPort returns the port passed to the most recent successful Start.
+func (l *Live) listenPort() uint16 {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.port
+}
+
 // Discover implements Session.
 func (l *Live) Discover(ctx context.Context, timeout time.Duration) (<-chan DeviceSummary, error) {
 	srv := l.server()
@@ -105,6 +114,7 @@ func (l *Live) Discover(ctx context.Context, timeout time.Duration) (<-chan Devi
 		return nil, err
 	}
 
+	port := l.listenPort()
 	out := make(chan DeviceSummary)
 	go func() {
 		defer close(out)
@@ -112,6 +122,7 @@ func (l *Live) Discover(ctx context.Context, timeout time.Duration) (<-chan Devi
 			summary := DeviceSummary{
 				Instance:     dev.ObjectId.InstanceNumber(),
 				IP:           dev.IPAddress,
+				Port:         port,
 				VendorID:     uint32(dev.VendorID),
 				MaxApdu:      uint32(dev.MaxAPDU),
 				Segmentation: uint32(dev.Segmentation),
