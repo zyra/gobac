@@ -3,6 +3,7 @@ package bacnet
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/zyra/gobac/v2/bacnet/pdu"
 	"github.com/zyra/gobac/v2/bacnet/types"
 	"net"
@@ -10,6 +11,21 @@ import (
 )
 
 func (s *Server) ReadProperty(ctx context.Context, address net.IP, objectType, objectInstance types.Uint16, propertyId types.PropertyId) ([]*types.PropertyValue, error) {
+	return s.readProperty(ctx, address, types.ObjectId{Type: objectType, Instance: objectInstance}, propertyId)
+}
+
+// ReadObjectProperty is ReadProperty with a full 22-bit object instance.
+func (s *Server) ReadObjectProperty(ctx context.Context, address net.IP, object types.ObjectId, propertyId types.PropertyId) ([]*types.PropertyValue, error) {
+	if object.InstanceNumber() > types.BacnetMaxInstance {
+		return nil, fmt.Errorf("object instance %d exceeds maximum of %d", object.InstanceNumber(), types.BacnetMaxInstance)
+	}
+	if object.Type >= types.BacnetMaxObject+1 {
+		return nil, fmt.Errorf("object type %d exceeds maximum of %d", object.Type, types.BacnetMaxObject)
+	}
+	return s.readProperty(ctx, address, object, propertyId)
+}
+
+func (s *Server) readProperty(ctx context.Context, address net.IP, object types.ObjectId, propertyId types.PropertyId) ([]*types.PropertyValue, error) {
 	if address == nil || address.Equal(net.IP{0, 0, 0, 0}) {
 		return nil, errors.New("received a nil or empty device IP")
 	}
@@ -22,11 +38,8 @@ func (s *Server) ReadProperty(ctx context.Context, address net.IP, objectType, o
 
 	req.SetConfirmedService(types.ConfirmedServiceReadProperty, &pdu.ReadPropertyPdu{
 		Property: &types.Property{
-			ObjectId: &types.ObjectId{
-				Type:     objectType,
-				Instance: objectInstance,
-			},
-			ID: propertyId,
+			ObjectId: &object,
+			ID:       propertyId,
 		},
 	}, address)
 

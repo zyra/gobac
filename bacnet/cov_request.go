@@ -3,6 +3,7 @@ package bacnet
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/zyra/gobac/v2/bacnet/pdu"
 	"github.com/zyra/gobac/v2/bacnet/types"
 	"net"
@@ -33,6 +34,64 @@ func (s *Server) SubscribeCov(ctx context.Context, deviceIP net.IP, objectType t
 // SubscribeCovWithProcessID subscribes using the complete BACnet Unsigned32
 // subscriber process identifier.
 func (s *Server) SubscribeCovWithProcessID(ctx context.Context, deviceIP net.IP, objectType types.ObjectType, objectInstance types.Uint16, processID uint32, cancel bool) (*CovNotifier, error) {
+	return s.subscribeCov(ctx, deviceIP, types.ObjectId{Type: objectType, Instance: objectInstance}, CovOptions{
+		ProcessID:  processID,
+		Confirmed:  true,
+		Indefinite: true,
+		Cancel:     cancel,
+	})
+}
+
+// SubscribeCovObject is SubscribeCovWithProcessID with a full 22-bit object instance.
+func (s *Server) SubscribeCovObject(ctx context.Context, deviceIP net.IP, object types.ObjectId, processID uint32, cancel bool) (*CovNotifier, error) {
+	if object.InstanceNumber() > types.BacnetMaxInstance {
+		return nil, fmt.Errorf("object instance %d exceeds maximum of %d", object.InstanceNumber(), types.BacnetMaxInstance)
+	}
+	if object.Type >= types.BacnetMaxObject+1 {
+		return nil, fmt.Errorf("object type %d exceeds maximum of %d", object.Type, types.BacnetMaxObject)
+	}
+	return s.subscribeCov(ctx, deviceIP, object, CovOptions{
+		ProcessID:  processID,
+		Confirmed:  true,
+		Indefinite: true,
+		Cancel:     cancel,
+	})
+}
+
+// CovOptions configures a COV subscription request beyond the legacy
+// confirmed/indefinite defaults used by SubscribeCov and
+// SubscribeCovWithProcessID.
+type CovOptions struct {
+	ProcessID uint32
+	// Confirmed selects confirmed (true) or unconfirmed (false) COV
+	// notifications. Ignored when Cancel is set.
+	Confirmed bool
+	// LifetimeSeconds is the requested subscription lifetime. It is only
+	// meaningful when Indefinite is false.
+	LifetimeSeconds uint32
+	// Indefinite requests a subscription with no defined expiration; when
+	// set, the lifetime tag is written with a value of 0 rather than
+	// LifetimeSeconds.
+	Indefinite bool
+	// Cancel requests cancellation of an existing subscription for the
+	// same device, object, and ProcessID.
+	Cancel bool
+}
+
+// SubscribeCovWithOptions subscribes to a monitored object's COV
+// notifications using explicit options: confirmed vs. unconfirmed
+// notification delivery and an explicit or indefinite lifetime.
+func (s *Server) SubscribeCovWithOptions(ctx context.Context, deviceIP net.IP, object types.ObjectId, opts CovOptions) (*CovNotifier, error) {
+	if object.InstanceNumber() > types.BacnetMaxInstance {
+		return nil, fmt.Errorf("object instance %d exceeds maximum of %d", object.InstanceNumber(), types.BacnetMaxInstance)
+	}
+	if object.Type >= types.BacnetMaxObject+1 {
+		return nil, fmt.Errorf("object type %d exceeds maximum of %d", object.Type, types.BacnetMaxObject)
+	}
+	return s.subscribeCov(ctx, deviceIP, object, opts)
+}
+
+func (s *Server) subscribeCov(ctx context.Context, deviceIP net.IP, object types.ObjectId, opts CovOptions) (*CovNotifier, error) {
 	if deviceIP == nil || deviceIP.Equal(net.IP{0, 0, 0, 0}) {
 		return nil, errors.New("received a nil or empty device IP")
 	}
@@ -45,16 +104,16 @@ func (s *Server) SubscribeCovWithProcessID(ctx context.Context, deviceIP net.IP,
 
 	handler := make(chan *Request, 128)
 
-	s.SetCovHandlerWithProcessID(deviceIP, processID, handler)
+	s.SetCovHandlerWithProcessID(deviceIP, opts.ProcessID, handler)
 	handlerOwned := false
 	defer func() {
 		if !handlerOwned {
-			s.RemoveCovHandlerWithProcessID(deviceIP, processID)
+			s.RemoveCovHandlerWithProcessID(deviceIP, opts.ProcessID)
 		}
 	}()
 
 	req.SetConfirmedService(types.ConfirmedServiceSubscribeCov, newSubscribeCovPayload(
-		objectType, objectInstance, processID, cancel,
+		object, opts,
 	), deviceIP)
 
 	if err := req.Send(deviceIP, s); err != nil {
@@ -76,11 +135,11 @@ func (s *Server) SubscribeCovWithProcessID(ctx context.Context, deviceIP net.IP,
 	case data := <-req.Data():
 		defer data.Release()
 		if data.Successful() {
-			if !cancel {
+			if !opts.Cancel {
 				n := &CovNotifier{
 					out:            make(chan *pdu.CovNotification, 128),
 					err:            make(chan error, 128),
-					subscriptionId: processID,
+					subscriptionId: opts.ProcessID,
 					handler:        handler,
 					deviceIP:       deviceIP,
 				}
@@ -104,16 +163,21 @@ func (s *Server) SubscribeCovWithProcessID(ctx context.Context, deviceIP net.IP,
 	}
 }
 
-func newSubscribeCovPayload(objectType types.ObjectType, objectInstance types.Uint16, processID uint32, cancel bool) *pdu.SubscribeCov {
-	return &pdu.SubscribeCov{
-		ObjectId: &types.ObjectId{
-			Instance: objectInstance,
-			Type:     objectType,
-		},
-		ProcessIdentifier:   uint8(processID),
-		ProcessIdentifier32: processID,
-		Cancel:              cancel,
+func newSubscribeCovPayload(object types.ObjectId, opts CovOptions) *pdu.SubscribeCov {
+	payload := &pdu.SubscribeCov{
+		ObjectId:            &object,
+		ProcessIdentifier:   uint8(opts.ProcessID),
+		ProcessIdentifier32: opts.ProcessID,
+		Cancel:              opts.Cancel,
 	}
+	if !opts.Cancel {
+		payload.IssueConfirmed = opts.Confirmed
+		payload.HasLifetime = true
+		if !opts.Indefinite {
+			payload.Lifetime = opts.LifetimeSeconds
+		}
+	}
+	return payload
 }
 
 func (n *CovNotifier) startListening(ctx context.Context, server *Server) {
@@ -143,9 +207,14 @@ func (n *CovNotifier) startListening(ctx context.Context, server *Server) {
 				defer data.Release()
 				if data.Successful() {
 					if val, ok := data.ResponseData().(*pdu.CovNotification); ok {
-						if err := n.sendAck(server, data); err != nil {
-							n.reportError(ctx, err)
-							return
+						// Only confirmed notifications (delivered as a
+						// confirmed service request) require a Simple-ACK;
+						// unconfirmed notifications get no response.
+						if data.PduType() == types.PduTypeConfirmedServiceRequest {
+							if err := n.sendAck(server, data); err != nil {
+								n.reportError(ctx, err)
+								return
+							}
 						}
 						select {
 						case n.out <- val:

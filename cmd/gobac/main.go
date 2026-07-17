@@ -41,13 +41,13 @@ func newApp() *cli.App {
 			Aliases:   []string{"rp"},
 			Usage:     "Read an object property",
 			Action:    actions.ReadProp,
-			ArgsUsage: "address object-id object-instance property-id [index]",
+			ArgsUsage: "address object-id object-instance(0..4194303) property-id [index]",
 		},
 		{
 			Name:      "writeprop",
 			Aliases:   []string{"wp"},
 			Usage:     "Write an object property",
-			ArgsUsage: "address object-id object-instance property-id tag value [index]",
+			ArgsUsage: "address object-id object-instance(0..4194303) property-id tag value [index]",
 			Flags: []cli.Flag{
 				cli.UintFlag{
 					Name:  "priority",

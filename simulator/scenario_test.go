@@ -1,6 +1,8 @@
 package simulator
 
 import (
+	"bytes"
+	"io/ioutil"
 	"math"
 	"strconv"
 	"strings"
@@ -55,6 +57,90 @@ devices:
 	}
 	if got := values[0].Value; got != float32(21.5) {
 		t.Fatalf("present value = %v, want 21.5", got)
+	}
+}
+
+func TestDecodeScenarioAcceptsOutOfServiceField(t *testing.T) {
+	input := `
+version: 1
+network:
+  mode: single-device
+devices:
+  - id: 1
+    name: device
+    objects:
+      - type: analog-input
+        instance: 1
+        name: Sensor
+        present_value: 1.0
+        out_of_service: true
+`
+	scenario, err := DecodeScenario(strings.NewReader(input), "yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	network, err := scenario.BuildNetwork()
+	if err != nil {
+		t.Fatal(err)
+	}
+	device, err := network.Device(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	object, err := device.Object(ObjectID{Type: uint16(types.ObjectTypeAnalogInput), Instance: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !object.OutOfService {
+		t.Fatalf("object.OutOfService = %v, want true", object.OutOfService)
+	}
+
+	// Default is false when the field is omitted.
+	defaultInput := `
+version: 1
+network:
+  mode: single-device
+devices:
+  - id: 1
+    name: device
+    objects:
+      - type: analog-input
+        instance: 1
+        name: Sensor
+        present_value: 1.0
+`
+	defaultScenario, err := DecodeScenario(strings.NewReader(defaultInput), "yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defaultNetwork, err := defaultScenario.BuildNetwork()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defaultDevice, err := defaultNetwork.Device(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defaultObject, err := defaultDevice.Object(ObjectID{Type: uint16(types.ObjectTypeAnalogInput), Instance: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if defaultObject.OutOfService {
+		t.Fatalf("default object.OutOfService = %v, want false", defaultObject.OutOfService)
+	}
+}
+
+func TestGoldenExampleScenarioStillValidates(t *testing.T) {
+	data, err := ioutil.ReadFile("../examples/simulator.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	scenario, err := DecodeScenario(bytes.NewReader(data), "yaml")
+	if err != nil {
+		t.Fatalf("golden example scenario failed to decode: %v", err)
+	}
+	if _, err := scenario.BuildNetwork(); err != nil {
+		t.Fatalf("golden example scenario failed to build: %v", err)
 	}
 }
 

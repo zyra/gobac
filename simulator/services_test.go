@@ -67,6 +67,77 @@ func TestWritePropertyPriorityOutOfRange(t *testing.T) {
 	}
 }
 
+func TestWritePropertyMultipleServiceCodec(t *testing.T) {
+	analogID := ObjectID{Type: uint16(types.ObjectTypeAnalogValue), Instance: 1}
+	binaryID := ObjectID{Type: uint16(types.ObjectTypeBinaryValue), Instance: 2}
+	payload := []byte{
+		0x0c, 0x00, 0x80, 0x00, 0x01, // [0] objectIdentifier AV:1
+		0x1e,       // [1] opening
+		0x09, 0x55, //   [0] propertyIdentifier 85
+		0x2e,                         //   [2] opening
+		0x44, 0x41, 0xa8, 0x00, 0x00, //     Real 21.0
+		0x2f,       //   [2] closing
+		0x39, 0x08, //   [3] priority 8
+		0x1f, // [1] closing
+
+		0x0c, 0x01, 0x40, 0x00, 0x02, // [0] objectIdentifier BV:2
+		0x1e,       // [1] opening
+		0x09, 0x55, //   [0] propertyIdentifier 85
+		0x2e,       //   [2] opening
+		0x91, 0x01, //     Enumerated 1
+		0x2f, //   [2] closing
+		0x1f, // [1] closing (no priority)
+	}
+
+	specifications, err := decodeWritePropertyMultiple(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(specifications) != 2 {
+		t.Fatalf("decoded %d specifications, want 2", len(specifications))
+	}
+
+	first := specifications[0]
+	if first.Object != analogID || len(first.Properties) != 1 {
+		t.Fatalf("decoded first specification = %+v", first)
+	}
+	firstWrite := first.Properties[0]
+	if firstWrite.Reference.ID != uint32(types.PropertyPresentValue) || firstWrite.Reference.ArrayIndex != nil || firstWrite.Priority != 8 {
+		t.Fatalf("decoded first write = %+v", firstWrite)
+	}
+	if len(firstWrite.Values) != 1 || firstWrite.Values[0].Tag != types.TagReal || firstWrite.Values[0].Value != types.Real(21.0) {
+		t.Fatalf("decoded first write values = %+v", firstWrite.Values)
+	}
+
+	second := specifications[1]
+	if second.Object != binaryID || len(second.Properties) != 1 {
+		t.Fatalf("decoded second specification = %+v", second)
+	}
+	secondWrite := second.Properties[0]
+	if secondWrite.Reference.ID != uint32(types.PropertyPresentValue) || secondWrite.Reference.ArrayIndex != nil || secondWrite.Priority != 0 {
+		t.Fatalf("decoded second write = %+v", secondWrite)
+	}
+	if len(secondWrite.Values) != 1 || secondWrite.Values[0].Tag != types.TagEnumerated || secondWrite.Values[0].Value != uint32(1) {
+		t.Fatalf("decoded second write values = %+v", secondWrite.Values)
+	}
+}
+
+func TestWritePropertyMultiplePriorityOutOfRange(t *testing.T) {
+	payload := []byte{
+		0x0c, 0x00, 0x80, 0x00, 0x01, // [0] objectIdentifier AV:1
+		0x1e,       // [1] opening
+		0x09, 0x55, //   [0] propertyIdentifier 85
+		0x2e,                         //   [2] opening
+		0x44, 0x41, 0xa8, 0x00, 0x00, //     Real 21.0
+		0x2f,     //   [2] closing
+		0x39, 17, //   [3] priority 17 (out of range)
+		0x1f, // [1] closing
+	}
+	if _, err := decodeWritePropertyMultiple(payload); err != errWritePriorityOutOfRange {
+		t.Fatalf("priority 17 error = %v", err)
+	}
+}
+
 func TestWhoIsAndIAmServiceCodecs(t *testing.T) {
 	low, high, err := decodeWhoIs([]byte{0x09, 0x64, 0x1a, 0x01, 0x2c})
 	if err != nil {
@@ -144,6 +215,30 @@ func TestSubscribeCOVServiceCodec(t *testing.T) {
 	cancel, err := decodeSubscribeCOV(payload[:10])
 	if err != nil || !cancel.Cancel {
 		t.Fatalf("decoded cancellation = %+v, %v", cancel, err)
+	}
+}
+
+func TestToPropertyValuePassesBitStringThroughUnchanged(t *testing.T) {
+	converted, err := toPropertyValue(Value{Tag: types.TagBitString, Value: types.BitString{0x08}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := converted.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []byte{0x82, 0x00, 0x10}
+	if !bytes.Equal(encoded, want) {
+		t.Fatalf("encoded status-flags-shaped bit string = %x, want %x", encoded, want)
+	}
+
+	var decoded types.PropertyValue
+	if err := decoded.UnmarshalBinary(encoded); err != nil {
+		t.Fatal(err)
+	}
+	decodedBits, ok := decoded.Value.(types.BitString)
+	if !ok || !bytes.Equal(decodedBits, types.BitString{0x08}) {
+		t.Fatalf("decoded bit string = %+v, want types.BitString{0x08}", decoded.Value)
 	}
 }
 

@@ -182,13 +182,14 @@ func (s *Server) writeResponse(ctx context.Context, conn transport.Conn, incomin
 		if incoming.Apdu.PduType&0xf0 != types.PduTypeConfirmedServiceRequest {
 			return errors.New("responder: Error APDU requires a confirmed request")
 		}
-		if len(response.Payload) != 0 {
-			return errors.New("responder: standard Error APDU cannot contain an additional payload")
-		}
 		packet.Apdu.InvokeID = incoming.Apdu.InvokeID
 		packet.Apdu.ServiceChoice = incoming.Apdu.ServiceChoice
 		packet.Apdu.ErrorClass = response.ErrorClass
 		packet.Apdu.ErrorCode = response.ErrorCode
+		// A non-empty payload replaces the generic errorClass/errorCode
+		// encoding, e.g. the WritePropertyMultiple-Error production. See
+		// pdu.Apdu.MarshalBinary's PduTypeError case.
+		packet.Apdu.Payload = cloneBytes(response.Payload)
 	case types.PduTypeReject:
 		if incoming.Apdu.PduType&0xf0 != types.PduTypeConfirmedServiceRequest {
 			return errors.New("responder: Reject requires a confirmed request")
