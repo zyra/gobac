@@ -10,11 +10,13 @@ import (
 	"github.com/zyra/gobac/gui/internal/ui"
 )
 
-// discoveryNavIndex and browserNavIndex are the AppShell nav indices of the
-// Discovery and Object Browser views (see navLabels in internal/ui/shell.go).
+// discoveryNavIndex, browserNavIndex, and editorNavIndex are the AppShell
+// nav indices of the Discovery, Object Browser, and Simulator Editor views
+// (see navLabels in internal/ui/shell.go).
 const (
 	discoveryNavIndex = 0
 	browserNavIndex   = 1
+	editorNavIndex    = 2
 )
 
 func main() {
@@ -35,6 +37,9 @@ func main() {
 
 	browser := ui.NewBrowserView(sess, objects, shell)
 	shell.SetView(browserNavIndex, browser)
+
+	editor := ui.NewEditorView(shell)
+	shell.SetView(editorNavIndex, editor)
 
 	if discoveryView, ok := discovery.(*ui.DiscoveryView); ok {
 		if browserView, ok := browser.(*ui.BrowserView); ok {
