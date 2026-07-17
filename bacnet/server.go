@@ -257,10 +257,15 @@ func (s *Server) handle(data []byte, n int, address *net.UDPAddr) {
 			}
 		}
 
-		found, delivered := s.deliverConfirmedHandler(address.IP, req.InvokeID(), req)
+		invokeID := req.InvokeID()
+		found, delivered := s.deliverConfirmedHandler(address.IP, invokeID, req)
 
 		if found {
-			ReleaseInvokeID(address.IP, req.InvokeID())
+			// req may already have been handed to a client goroutine
+			// (delivered == true) and concurrently reset/reused via
+			// sync.Pool, so nothing below may touch req again; invokeID
+			// was captured above, before delivery.
+			ReleaseInvokeID(address.IP, invokeID)
 			if !delivered {
 				req.Release()
 			}
