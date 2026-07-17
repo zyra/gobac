@@ -447,8 +447,12 @@ func TestSendConcurrentWithStartup(t *testing.T) {
 
 func TestSubscribeCovCancellationPayload(t *testing.T) {
 	const processID uint32 = 0x01020304
-	cancelPayload := newSubscribeCovPayload(types.ObjectId{Type: types.ObjectTypeAnalogInput, Instance: 3}, processID, true)
-	activePayload := newSubscribeCovPayload(types.ObjectId{Type: types.ObjectTypeAnalogInput, Instance: 3}, processID, false)
+	cancelPayload := newSubscribeCovPayload(types.ObjectId{Type: types.ObjectTypeAnalogInput, Instance: 3}, CovOptions{
+		ProcessID: processID, Confirmed: true, Indefinite: true, Cancel: true,
+	})
+	activePayload := newSubscribeCovPayload(types.ObjectId{Type: types.ObjectTypeAnalogInput, Instance: 3}, CovOptions{
+		ProcessID: processID, Confirmed: true, Indefinite: true, Cancel: false,
+	})
 	if !cancelPayload.Cancel {
 		t.Fatal("cancellation flag was not copied to SubscribeCOV payload")
 	}

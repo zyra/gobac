@@ -268,6 +268,20 @@ func (s *Server) handle(data []byte, n int, address *net.UDPAddr) {
 			req.Release()
 		}
 	} else {
+		if req.ServiceChoice() == types.UnconfirmedServiceCovNotification {
+			// This is an unconfirmed COV notification; route it to the
+			// same per-(deviceIP, processID) handler confirmed
+			// notifications use so CovNotifier.Data() carries both
+			// variants transparently.
+			if n, ok := req.Apdu.ResponseData.(*pdu.CovNotification); ok {
+				if found, delivered := s.deliverCovHandler(address.IP, n.ProcessIdentifier32, req); found {
+					if !delivered {
+						req.Release()
+					}
+					return
+				}
+			}
+		}
 		if !s.dispatchUnconfirmed(types.UnconfirmedService(req.ServiceChoice()), req, data[:n], address) {
 			req.Release()
 		}
