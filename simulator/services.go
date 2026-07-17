@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/zyra/gobac/v2/bacnet/pdu"
 	"github.com/zyra/gobac/v2/bacnet/types"
 )
 
@@ -154,6 +155,36 @@ func encodeIAm(device *Device) ([]byte, error) {
 		out.Write(encoded)
 	}
 	return out.Bytes(), nil
+}
+
+func decodeWhoHas(data []byte) (*pdu.WhoHas, error) {
+	query := &pdu.WhoHas{}
+	if err := query.UnmarshalBinary(data); err != nil {
+		return nil, err
+	}
+	if query.HasRange && (query.LowLimit > MaxObjectInstance || query.HighLimit > MaxObjectInstance || query.LowLimit > query.HighLimit) {
+		return nil, errors.New("invalid Who-Has device instance range")
+	}
+	return query, nil
+}
+
+func encodeIHave(device *Device, object *Object) ([]byte, error) {
+	if device == nil {
+		return nil, errors.New("device is required")
+	}
+	if object == nil {
+		return nil, errors.New("object is required")
+	}
+	deviceID := &types.ObjectId{Type: types.ObjectTypeDevice}
+	if err := deviceID.SetInstanceNumber(device.ID); err != nil {
+		return nil, err
+	}
+	objectID, err := toBACnetObjectID(object.ID)
+	if err != nil {
+		return nil, err
+	}
+	payload := &pdu.IHave{DeviceId: *deviceID, ObjectId: *objectID, ObjectName: object.Name}
+	return payload.MarshalBinary()
 }
 
 func decodeReadPropertyMultiple(data []byte) ([]ReadAccessSpecification, error) {

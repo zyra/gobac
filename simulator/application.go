@@ -35,6 +35,7 @@ func NewApplication(device *Device, clock Clock) *Application {
 
 func (a *Application) Register(server *responder.Server) {
 	server.Handle(types.PduTypeUnconfirmedServiceRequest, types.UnconfirmedServiceWhoIs, a.handleWhoIs)
+	server.Handle(types.PduTypeUnconfirmedServiceRequest, types.UnconfirmedServiceWhoHas, a.handleWhoHas)
 	server.Handle(types.PduTypeConfirmedServiceRequest, types.ConfirmedServiceReadProperty, a.handleReadProperty)
 	server.Handle(types.PduTypeConfirmedServiceRequest, types.ConfirmedServiceWriteProperty, a.handleWriteProperty)
 	server.Handle(types.PduTypeConfirmedServiceRequest, types.ConfirmedServiceWritePropertyMultiple, a.handleWritePropertyMultiple)
@@ -57,6 +58,43 @@ func (a *Application) handleWhoIs(_ context.Context, request *responder.Request)
 	destination := transport.NewEndpoint(net.IPv4bcast, request.Destination.Port)
 	return []responder.Response{
 		responder.Unconfirmed(types.UnconfirmedServiceIAm, payload).To(destination).AsBroadcast(),
+	}, nil
+}
+
+func (a *Application) handleWhoHas(_ context.Context, request *responder.Request) ([]responder.Response, error) {
+	query, err := decodeWhoHas(request.Packet.Apdu.Payload)
+	if err != nil {
+		return nil, nil
+	}
+	if query.HasRange && (a.Device.ID < query.LowLimit || a.Device.ID > query.HighLimit) {
+		return nil, nil
+	}
+
+	var found *Object
+	a.Device.mu.RLock()
+	for _, object := range a.Device.Objects {
+		if query.ObjectId != nil {
+			if fromBACnetObjectID(query.ObjectId) == object.ID {
+				found = object
+				break
+			}
+		} else if object.Name == query.ObjectName {
+			found = object
+			break
+		}
+	}
+	a.Device.mu.RUnlock()
+	if found == nil {
+		return nil, nil
+	}
+
+	payload, err := encodeIHave(a.Device, found)
+	if err != nil {
+		return nil, err
+	}
+	destination := transport.NewEndpoint(net.IPv4bcast, request.Destination.Port)
+	return []responder.Response{
+		responder.Unconfirmed(types.UnconfirmedServiceIHave, payload).To(destination).AsBroadcast(),
 	}, nil
 }
 

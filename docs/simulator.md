@@ -27,6 +27,7 @@ Broadcast behavior depends on the host network configuration. Multi-IP scenarios
 ## Implemented behavior
 
 - Who-Is range filtering and broadcast I-Am replies
+- Who-Has range filtering, matching by object identifier or exact object name, and broadcast I-Have replies
 - ReadProperty, including array index zero, individual elements, and all elements
 - WriteProperty with writable checks and command priorities 1 through 16, excluding reserved priority 6
 - WritePropertyMultiple with atomic validate-then-apply semantics and the standard WritePropertyMultiple-Error on failure

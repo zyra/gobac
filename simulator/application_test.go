@@ -203,6 +203,85 @@ func TestApplicationWritePropertyPriorityErrors(t *testing.T) {
 	}
 }
 
+func whoHasTestRequest(t *testing.T, query *pdu.WhoHas) *responder.Request {
+	t.Helper()
+	payload, err := query.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet := bacnet.NewRequest()
+	packet.Apdu.Payload = payload
+	return &responder.Request{
+		Packet:      packet,
+		Destination: transport.NewEndpoint(net.IPv4bcast, 47808),
+	}
+}
+
+func TestApplicationHandleWhoHasByObjectId(t *testing.T) {
+	device := applicationTestDevice()
+	application := NewApplication(device, RealClock{})
+
+	request := whoHasTestRequest(t, &pdu.WhoHas{
+		ObjectId: &types.ObjectId{Type: types.ObjectTypeAnalogValue, Instance: 1},
+	})
+	responses, err := application.handleWhoHas(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(responses) != 1 {
+		t.Fatalf("responses = %+v, want exactly one", responses)
+	}
+	response := responses[0]
+	if response.PDUType != types.PduTypeUnconfirmedServiceRequest || response.ServiceChoice != types.UnconfirmedServiceIHave {
+		t.Fatalf("unexpected I-Have response: %+v", response)
+	}
+	iHave := &pdu.IHave{}
+	if err := iHave.UnmarshalBinary(response.Payload); err != nil {
+		t.Fatal(err)
+	}
+	wantDeviceId := types.ObjectId{Type: types.ObjectTypeDevice}
+	if err := wantDeviceId.SetInstanceNumber(device.ID); err != nil {
+		t.Fatal(err)
+	}
+	wantObjectId := types.ObjectId{Type: types.ObjectTypeAnalogValue, Instance: 1}
+	if iHave.DeviceId != wantDeviceId || iHave.ObjectId != wantObjectId || iHave.ObjectName != "Setpoint" {
+		t.Fatalf("i-have = %+v, want device=%+v object=%+v name=%q", iHave, wantDeviceId, wantObjectId, "Setpoint")
+	}
+}
+
+func TestApplicationHandleWhoHasByNameMissing(t *testing.T) {
+	device := applicationTestDevice()
+	application := NewApplication(device, RealClock{})
+
+	request := whoHasTestRequest(t, &pdu.WhoHas{ObjectName: "does-not-exist"})
+	responses, err := application.handleWhoHas(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(responses) != 0 {
+		t.Fatalf("responses = %+v, want none", responses)
+	}
+}
+
+func TestApplicationHandleWhoHasRangeExcludesDevice(t *testing.T) {
+	device := applicationTestDevice() // device.ID == 70000
+	application := NewApplication(device, RealClock{})
+
+	request := whoHasTestRequest(t, &pdu.WhoHas{
+		HasRange:  true,
+		LowLimit:  1,
+		HighLimit: 100,
+		ObjectId:  &types.ObjectId{Type: types.ObjectTypeAnalogValue, Instance: 1},
+	})
+	responses, err := application.handleWhoHas(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(responses) != 0 {
+		t.Fatalf("responses = %+v, want none", responses)
+	}
+}
+
 // writePropertyMultipleTestPayload is the WritePropertyMultiple-Request wire
 // encoding for two objects: analog-value 1 present-value <- Real 21.0
 // priority 8, and binary-value 2 present-value <- Enumerated 1, no priority.
