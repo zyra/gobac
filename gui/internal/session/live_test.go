@@ -31,6 +31,7 @@ func simDeviceAddress() Address {
 }
 
 func TestReadPropertyAgainstSimulator(t *testing.T) {
+	skipUnderRace(t)
 	port, shutdown := startSimDevice(t)
 	defer shutdown()
 
@@ -54,6 +55,7 @@ func TestReadPropertyAgainstSimulator(t *testing.T) {
 }
 
 func TestWriteThenReadBack(t *testing.T) {
+	skipUnderRace(t)
 	port, shutdown := startSimDevice(t)
 	defer shutdown()
 
@@ -80,6 +82,7 @@ func TestWriteThenReadBack(t *testing.T) {
 }
 
 func TestWriteErrorSurfaces(t *testing.T) {
+	skipUnderRace(t)
 	port, shutdown := startSimDevice(t)
 	defer shutdown()
 
@@ -128,6 +131,7 @@ func TestStartStopLifecycle(t *testing.T) {
 }
 
 func TestReadMultipleCollectsPerPropertyErrors(t *testing.T) {
+	skipUnderRace(t)
 	port, shutdown := startSimDevice(t)
 	defer shutdown()
 

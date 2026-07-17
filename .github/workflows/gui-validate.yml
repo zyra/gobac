@@ -30,6 +30,10 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libgl1-mesa-dev xorg-dev
 
+      - name: Alias loopback address for simulator tests (macOS)
+        if: runner.os == 'macOS'
+        run: sudo ifconfig lo0 alias 127.0.0.2 up
+
       - name: Vet
         working-directory: gui
         run: go vet ./...
