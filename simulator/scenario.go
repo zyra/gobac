@@ -19,7 +19,6 @@ const ScenarioVersion = 1
 
 type Scenario struct {
 	Version int           `json:"version" yaml:"version"`
-	Seed    int64         `json:"seed,omitempty" yaml:"seed,omitempty"`
 	Network NetworkConfig `json:"network" yaml:"network"`
 	Devices []DeviceSpec  `json:"devices" yaml:"devices"`
 }

@@ -2,6 +2,7 @@ package bacnet
 
 import (
 	"context"
+	"errors"
 	"net"
 	"sync"
 	"testing"
@@ -464,5 +465,156 @@ func TestSubscribeCovCancellationPayload(t *testing.T) {
 	}
 	if len(cancelBytes) >= len(activeBytes) {
 		t.Fatalf("cancellation encoded optional subscription fields: cancel=%x active=%x", cancelBytes, activeBytes)
+	}
+}
+
+// scriptedUDPReader is a udpReader test double whose ReadFromUDP behavior is
+// driven by a caller-supplied function keyed on call number, so receive()'s
+// error handling can be exercised without a real socket.
+type scriptedUDPReader struct {
+	mtx   sync.Mutex
+	calls int
+	fn    func(call int) (int, *net.UDPAddr, error)
+}
+
+func (r *scriptedUDPReader) ReadFromUDP(b []byte) (int, *net.UDPAddr, error) {
+	r.mtx.Lock()
+	r.calls++
+	call := r.calls
+	r.mtx.Unlock()
+	return r.fn(call)
+}
+
+func TestReceiveSurvivesTransientReadError(t *testing.T) {
+	server := newLifecycleTestServer()
+	server.rcvErrors = true
+	server.error = make(chan error, 50)
+
+	callNotify := make(chan int, 10)
+	unblock := make(chan struct{})
+	reader := &scriptedUDPReader{}
+	reader.fn = func(call int) (int, *net.UDPAddr, error) {
+		callNotify <- call
+		switch call {
+		case 1:
+			return 0, nil, errors.New("read udp4: no buffer space available")
+		case 2:
+			return 0, nil, errors.New("read udp4: no buffer space available (2)")
+		default:
+			<-unblock
+			return 0, nil, errors.New("use of closed network connection")
+		}
+	}
+
+	done := make(chan struct{})
+	go func() {
+		server.receive(reader, context.Background())
+		close(done)
+	}()
+
+	// The reader's call count must reach at least 3 within 1s -- proving the
+	// loop survived the first two transient errors instead of returning
+	// after the first one (the old, buggy behavior).
+	timeout := time.After(time.Second)
+	for i := 1; i <= 3; i++ {
+		select {
+		case call := <-callNotify:
+			if call != i {
+				t.Fatalf("expected call %d to arrive next, got %d", i, call)
+			}
+		case <-timeout:
+			t.Fatalf("call count did not reach 3 within 1s (observed %d calls)", i-1)
+		}
+	}
+
+	// Both transient errors must have been reported.
+	for i := 0; i < 2; i++ {
+		select {
+		case err := <-server.Errors():
+			if err == nil {
+				t.Fatal("expected non-nil transient error on Errors()")
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("timed out waiting for transient error %d to be reported", i+1)
+		}
+	}
+
+	// Trigger shutdown, then unblock the third (blocked) read so it can
+	// return the fatal closed-connection error and the loop can exit.
+	server.Shutdown()
+	close(unblock)
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("receive did not exit after shutdown")
+	}
+}
+
+func TestReceiveStopsOnClosedConnectionError(t *testing.T) {
+	server := newLifecycleTestServer()
+
+	reader := &scriptedUDPReader{
+		fn: func(call int) (int, *net.UDPAddr, error) {
+			return 0, nil, errors.New("use of closed network connection")
+		},
+	}
+
+	done := make(chan struct{})
+	go func() {
+		server.receive(reader, context.Background())
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("receive did not exit on closed-connection error")
+	}
+
+	reader.mtx.Lock()
+	calls := reader.calls
+	reader.mtx.Unlock()
+	if calls != 1 {
+		t.Fatalf("expected exactly 1 read call, got %d (possible hot spin)", calls)
+	}
+}
+
+func TestReceiveStopsWhenContextCanceled(t *testing.T) {
+	server := newLifecycleTestServer()
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// firstCall is closed exactly once, on the first read, without blocking
+	// subsequent (possibly many, since this is a tight retry loop) reads --
+	// an unbounded/blocking notification channel here could deadlock the
+	// receive goroutine before it ever gets to observe cancellation.
+	firstCall := make(chan struct{})
+	reader := &scriptedUDPReader{
+		fn: func(call int) (int, *net.UDPAddr, error) {
+			if call == 1 {
+				close(firstCall)
+			}
+			return 0, nil, errors.New("read udp4: no buffer space available")
+		},
+	}
+
+	done := make(chan struct{})
+	go func() {
+		server.receive(reader, ctx)
+		close(done)
+	}()
+
+	select {
+	case <-firstCall:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for first read call")
+	}
+
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("receive did not exit after context cancellation")
 	}
 }

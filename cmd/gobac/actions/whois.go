@@ -12,6 +12,10 @@ import (
 	"github.com/zyra/gobac/v2/bacnet/types"
 )
 
+var whoIsRequest = func(ctx context.Context, timeout time.Duration) (<-chan *types.Device, error) {
+	return server.WhoIs(ctx, timeout)
+}
+
 func Whois(ctx *cli.Context) (err error) {
 	duration := time.Duration(ctx.Float64("duration")*1000) * time.Millisecond
 
@@ -40,7 +44,7 @@ func whois(duration time.Duration) (devices []*types.Device, err error) {
 
 	devices = make([]*types.Device, 0)
 
-	dChan, err := server.WhoIs(context.TODO(), duration)
+	dChan, err := whoIsRequest(context.TODO(), duration)
 
 	if err != nil {
 		return nil, err

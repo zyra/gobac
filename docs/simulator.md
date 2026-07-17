@@ -44,5 +44,6 @@ For a commandable object, `relinquish_default` is the fallback value. An explici
 - No BBMD, foreign-device, router, BACnet/IPv6, BACnet/SC, or MS/TP simulation
 - No segmented APDUs
 - No persistence or external control API while a scenario is running
+- Scenarios are deterministic; there is no randomness and no `seed` field
 - COV notifications currently track Present_Value writes; COV-property subscriptions and multi-property COV are not implemented
 - The scenario object catalog is intentionally smaller than the BACnet object catalog

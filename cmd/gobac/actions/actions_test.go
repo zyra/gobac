@@ -2,9 +2,15 @@ package actions
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"flag"
+	"io/ioutil"
 	"net"
+	"os"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli"
@@ -116,4 +122,185 @@ func TestBeforeDoesNotStartServerForHelp(t *testing.T) {
 	require.NoError(t, Before(actionContext("readprop", "--help")))
 	require.Nil(t, server)
 	require.False(t, hasHelpArgument(cli.Args{"writeprop", "address", "2", "1", "85", "7", "help"}))
+}
+
+func TestWhoisSortsAndPreserves22BitInstances(t *testing.T) {
+	previous := whoIsRequest
+	defer func() { whoIsRequest = previous }()
+
+	makeDevice := func(instance uint32, n byte) *types.Device {
+		d := &types.Device{}
+		d.DeviceInstance = instance
+		d.IPAddress = net.IPv4(192, 0, 2, n)
+		return d
+	}
+
+	ch := make(chan *types.Device, 3)
+	ch <- makeDevice(4194303, 1) // 0x3FFFFF, max 22-bit value
+	ch <- makeDevice(70000, 2)   // above the old 16-bit ceiling of 65535
+	ch <- makeDevice(12, 3)
+	close(ch)
+
+	whoIsRequest = func(_ context.Context, _ time.Duration) (<-chan *types.Device, error) {
+		return ch, nil
+	}
+
+	devices, err := whois(time.Second)
+
+	require.NoError(t, err)
+	require.Len(t, devices, 3)
+	require.Equal(t, []uint32{12, 70000, 4194303}, []uint32{
+		devices[0].DeviceInstance,
+		devices[1].DeviceInstance,
+		devices[2].DeviceInstance,
+	})
+}
+
+func TestWhoisReturnsErrorWhenNoDevicesFound(t *testing.T) {
+	previous := whoIsRequest
+	defer func() { whoIsRequest = previous }()
+
+	ch := make(chan *types.Device)
+	close(ch)
+
+	whoIsRequest = func(_ context.Context, _ time.Duration) (<-chan *types.Device, error) {
+		return ch, nil
+	}
+
+	_, err := whois(time.Second)
+
+	require.EqualError(t, err, "no devices found")
+}
+
+func TestWhoisActionForwardsDuration(t *testing.T) {
+	previous := whoIsRequest
+	defer func() { whoIsRequest = previous }()
+
+	var gotTimeout time.Duration
+
+	ch := make(chan *types.Device, 1)
+	d := &types.Device{}
+	d.DeviceInstance = 1
+	d.IPAddress = net.IPv4(192, 0, 2, 1)
+	ch <- d
+	close(ch)
+
+	whoIsRequest = func(_ context.Context, timeout time.Duration) (<-chan *types.Device, error) {
+		gotTimeout = timeout
+		return ch, nil
+	}
+
+	set := flag.NewFlagSet("test", flag.ContinueOnError)
+	set.Float64("duration", 2.5, "")
+	ctx := cli.NewContext(nil, set, nil)
+
+	err := Whois(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, 2500*time.Millisecond, gotTimeout)
+}
+
+func TestScanReturnsWhoisError(t *testing.T) {
+	previous := whoIsRequest
+	defer func() { whoIsRequest = previous }()
+
+	whoIsRequest = func(_ context.Context, _ time.Duration) (<-chan *types.Device, error) {
+		return nil, errors.New("boom")
+	}
+
+	err := Scan(actionContext())
+
+	require.EqualError(t, err, "boom")
+}
+
+func TestScanCollectsObjectsAndProperties(t *testing.T) {
+	previousWhoIs := whoIsRequest
+	previousDeviceObjects := deviceObjects
+	previousObjectProperties := objectProperties
+	defer func() {
+		whoIsRequest = previousWhoIs
+		deviceObjects = previousDeviceObjects
+		objectProperties = previousObjectProperties
+	}()
+
+	scanProperties := []*types.Property{
+		{
+			ID: types.PropertyObjectName,
+			Values: []*types.PropertyValue{
+				{Type: types.TagCharacterString, Value: types.CharacterString{Value: "AHU"}},
+			},
+		},
+		{
+			ID: types.PropertyDescription,
+			Values: []*types.PropertyValue{
+				{Type: types.TagCharacterString, Value: types.CharacterString{Value: "desc"}},
+			},
+		},
+		{
+			ID: types.PropertyPresentValue,
+			Values: []*types.PropertyValue{
+				{Type: types.TagReal, Value: types.Real(21.5)},
+			},
+		},
+	}
+
+	ch := make(chan *types.Device, 1)
+	dev := &types.Device{}
+	dev.DeviceInstance = 70000
+	dev.IPAddress = net.IPv4(192, 0, 2, 10)
+	ch <- dev
+	close(ch)
+
+	whoIsRequest = func(_ context.Context, _ time.Duration) (<-chan *types.Device, error) {
+		return ch, nil
+	}
+
+	var mu sync.Mutex
+	var gotDeviceInstance uint32
+
+	deviceObjects = func(device types.Device) ([]*types.Object, error) {
+		mu.Lock()
+		gotDeviceInstance = device.DeviceInstance
+		mu.Unlock()
+
+		o := &types.Object{IPAddress: net.IPv4(192, 0, 2, 11)}
+		return []*types.Object{o}, nil
+	}
+
+	objectProperties = func(_ types.Object) ([]*types.Property, error) {
+		return scanProperties, nil
+	}
+
+	old := os.Stdout
+	r, w, pipeErr := os.Pipe()
+	require.NoError(t, pipeErr)
+	os.Stdout = w
+
+	err := Scan(actionContext())
+
+	w.Close()
+	os.Stdout = old
+
+	out, readErr := ioutil.ReadAll(r)
+	require.NoError(t, readErr)
+
+	require.NoError(t, err)
+
+	mu.Lock()
+	require.Equal(t, uint32(70000), gotDeviceInstance)
+	mu.Unlock()
+
+	var result []map[string]interface{}
+	require.NoError(t, json.Unmarshal(out, &result))
+	require.Len(t, result, 1)
+
+	objects, ok := result[0]["Objects"].([]interface{})
+	require.True(t, ok)
+	require.Len(t, objects, 1)
+
+	obj, ok := objects[0].(map[string]interface{})
+	require.True(t, ok)
+	require.Equal(t, "AHU", obj["Name"])
+	require.Equal(t, "desc", obj["Description"])
+	require.Equal(t, 21.5, obj["FloatValue"])
 }
