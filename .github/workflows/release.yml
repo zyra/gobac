@@ -26,6 +26,35 @@ jobs:
       - name: Vet
         run: go vet -mod=vendor ./...
 
+  # Fast Linux-only gate for the gui/ module before a release build kicks
+  # off. This intentionally does not build/test on Windows or macOS: the
+  # full 3-OS GUI validation (see gui-validate.yml) already runs on every
+  # push and pull request, so re-running it here would only add latency to
+  # tag pushes. No loopback alias (127.0.0.2) is needed on Linux -- that
+  # workaround is only required for the macOS and Windows legs of
+  # gui-validate.yml.
+  gui-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: 1.24.x
+
+      - name: Install Fyne build dependencies
+        run: sudo apt-get update && sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev
+
+      - name: Vet
+        working-directory: gui
+        run: go vet ./...
+
+      - name: Test (race)
+        working-directory: gui
+        run: go test -race -count=1 ./...
+
   release:
     needs: validate
     runs-on: ubuntu-latest
@@ -51,7 +80,7 @@ jobs:
           mkdir -p dist
           version="${GITHUB_REF_NAME#v}"
 
-          for target in linux/amd64 linux/arm64 windows/amd64 darwin/amd64 darwin/arm64; do
+          for target in linux/amd64 linux/arm64 windows/amd64 windows/arm64 darwin/amd64 darwin/arm64; do
             goos="${target%/*}"
             goarch="${target#*/}"
 
@@ -106,3 +135,116 @@ jobs:
               --title "${GITHUB_REF_NAME}" \
               --generate-notes
           fi
+
+  # gobac-gui (gui/) requires CGO for Fyne, so it cannot be cross-compiled
+  # from ubuntu like the CLI targets above -- it needs to build on a native
+  # runner per OS/arch. This job depends on "release" so the GitHub release
+  # already exists (created by that job) before assets are uploaded to it;
+  # each matrix leg uploads its own binary archive and its own
+  # SHA256SUMS-gui-<goos>-<goarch> file with `--clobber`, so re-running a
+  # single leg never clobbers another leg's assets.
+  #
+  # Runner label notes (verified against GitHub's hosted-runner docs as of
+  # this workflow's authoring):
+  #   - ubuntu-24.04-arm and windows-11-arm: Linux and Windows arm64
+  #     standard runners are generally available for public repositories,
+  #     so linux/arm64 and windows/arm64 are both included below.
+  #   - macos-13 has been retired (fully unsupported since December 2025)
+  #     and no longer exists as a runner label. Its replacement for
+  #     Intel/x86_64 macOS is macos-15-intel, which is used below for
+  #     darwin/amd64 instead of the originally-expected macos-13.
+  #   - macos-latest currently resolves to an Apple Silicon (arm64) image,
+  #     used below for darwin/arm64.
+  #   No target was omitted: a currently-valid label exists for all six
+  #   OS/arch combinations.
+  gui-release:
+    needs: [release, gui-validate]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            goos: linux
+            goarch: amd64
+          - runner: ubuntu-24.04-arm
+            goos: linux
+            goarch: arm64
+          - runner: windows-latest
+            goos: windows
+            goarch: amd64
+          - runner: windows-11-arm
+            goos: windows
+            goarch: arm64
+          - runner: macos-15-intel
+            goos: darwin
+            goarch: amd64
+          - runner: macos-latest
+            goos: darwin
+            goarch: arm64
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: 1.24.x
+
+      - name: Install Fyne build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev
+
+      - name: Build and package GUI release asset
+        shell: bash
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          set -euo pipefail
+
+          asset="gobac-gui-${GITHUB_REF_NAME}-${GOOS}-${GOARCH}"
+          stage="$(mktemp -d)"
+          package="${stage}/${asset}"
+          binary="gobac-gui"
+
+          if [[ "${GOOS}" == "windows" ]]; then
+            binary="${binary}.exe"
+          fi
+
+          mkdir -p "${package}"
+          (cd gui && go build \
+            -trimpath \
+            -ldflags="-s -w" \
+            -o "${package}/${binary}" \
+            .)
+
+          cp LICENSE "${package}/"
+
+          mkdir -p dist
+          if [[ "${GOOS}" == "windows" ]]; then
+            archive="${PWD}/dist/${asset}.zip"
+            (cd "${stage}" && python3 -m zipfile -c "${archive}" "${asset}")
+          else
+            tar -C "${stage}" -czf "dist/${asset}.tar.gz" "${asset}"
+          fi
+
+          rm -rf "${stage}"
+
+          # macOS runners ship without GNU coreutils' sha256sum, and
+          # shasum's availability on the Windows runners' Git Bash isn't
+          # guaranteed either, so compute the checksum with Python
+          # (already required above for zip packaging, and present on
+          # every GitHub-hosted runner family) for a result that's
+          # portable across all three OSes.
+          python3 -c 'import hashlib, pathlib, sys; asset, goos, goarch = sys.argv[1:4]; dist = pathlib.Path("dist"); out = dist / f"SHA256SUMS-gui-{goos}-{goarch}"; out.write_text("\n".join(f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}" for p in sorted(dist.glob(f"{asset}.*"))) + "\n")' "${asset}" "${GOOS}" "${GOARCH}"
+
+      - name: Upload GUI release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          gh release upload "${GITHUB_REF_NAME}" dist/* --clobber
