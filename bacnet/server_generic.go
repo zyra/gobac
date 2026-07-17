@@ -37,7 +37,19 @@ func (s *Server) ListenContext(ctx context.Context) error {
 	serverAddr := getUdpAddr(s.IPv4, s.ServerPort)
 	broadcastAddr := getUdpAddr(s.BroadcastIPv4, s.BroadcastPort)
 
-	broadcastConn, err := listenBroadcastUDP(ctx, broadcastAddr)
+	// The broadcast socket binds the wildcard address, not the literal
+	// directed-broadcast address (broadcastAddr, e.g. 127.255.255.255):
+	// unlike Linux, BSD-family kernels (including darwin) refuse to bind a
+	// UDP socket to a directed-broadcast IP at all ("bind: can't assign
+	// requested address") since it isn't a real local interface address.
+	// A wildcard bind still receives datagrams sent to that broadcast
+	// address, matching how server_posix.go's single Linux/FreeBSD socket
+	// binds ":"+port. broadcastAddr itself is unaffected: it is still
+	// recorded via installConnections below as the destination address
+	// used when sending broadcasts.
+	broadcastBindAddr := getUdpAddr(net.IPv4zero, s.BroadcastPort)
+
+	broadcastConn, err := listenBroadcastUDP(ctx, broadcastBindAddr)
 	if err != nil {
 		return err
 	}

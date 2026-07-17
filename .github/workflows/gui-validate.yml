@@ -22,6 +22,10 @@ permissions:
 jobs:
   test:
     strategy:
+      # Run every OS leg to completion even if another fails: they're
+      # independent, and canceling the rest on a single failure hides
+      # whether the other legs would have passed.
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
