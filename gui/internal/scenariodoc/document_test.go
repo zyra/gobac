@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -95,6 +96,9 @@ func TestSaveIsAtomicAndLeavesDestinationUntouchedOnFailure(t *testing.T) {
 }
 
 func TestSaveToUnwritableDirectoryFails(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("windows: Unix permission bits on a directory do not block file creation")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("running as root: directory permissions do not block writes")
 	}
