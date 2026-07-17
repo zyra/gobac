@@ -1,6 +1,7 @@
 package simulator
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
@@ -261,6 +262,151 @@ func TestCommandablePriorityArrayReads(t *testing.T) {
 	// Write denial: Priority_Array is read-only.
 	if err := device.WriteProperty(commandable, uint32(types.PropertyPriorityArray), []Value{{Tag: types.TagReal, Value: float32(1)}}, 0); err != ErrWriteDenied {
 		t.Fatalf("write to priority array error = %v, want ErrWriteDenied", err)
+	}
+}
+
+// realismScenarioDevice builds a device with a non-commandable, non-writable
+// analog-input and a commandable analog-output, for the Status_Flags/
+// Event_State/Reliability/Out_Of_Service/Relinquish_Default tests below.
+func realismScenarioDevice(t *testing.T) *Device {
+	t.Helper()
+	scenario := &Scenario{
+		Version: ScenarioVersion,
+		Network: NetworkConfig{Mode: "single-device", Port: 47808},
+		Devices: []DeviceSpec{{
+			ID: 1, Name: "device", Objects: []ObjectSpec{
+				{
+					Type: "analog-input", Instance: 1, Name: "sensor",
+					PresentValue: float64(10),
+				},
+				{
+					Type: "analog-output", Instance: 1, Name: "command",
+					PresentValue: float64(35), Writable: true, Commandable: true,
+					RelinquishDefault: float64(0),
+				},
+			},
+		}},
+	}
+	network, err := scenario.BuildNetwork()
+	if err != nil {
+		t.Fatal(err)
+	}
+	device, err := network.Device(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return device
+}
+
+func TestStatusFlagsEventStateReliabilityReadFresh(t *testing.T) {
+	device := realismScenarioDevice(t)
+	input := ObjectID{Type: uint16(types.ObjectTypeAnalogInput), Instance: 1}
+
+	values, err := device.ReadProperty(input, uint32(types.PropertyStatusFlags), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(values) != 1 || values[0].Tag != types.TagBitString {
+		t.Fatalf("status flags = %+v", values)
+	}
+	if got, want := values[0].Value, (types.BitString{0x00}); !bytes.Equal(got.(types.BitString), want) {
+		t.Fatalf("status flags bits = %x, want %x", got, want)
+	}
+
+	if err := device.WriteProperty(input, uint32(types.PropertyOutOfService), []Value{{Tag: types.TagBoolean, Value: true}}, 0); err != nil {
+		t.Fatal(err)
+	}
+	values, err = device.ReadProperty(input, uint32(types.PropertyStatusFlags), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := values[0].Value, (types.BitString{0x08}); !bytes.Equal(got.(types.BitString), want) {
+		t.Fatalf("status flags bits after OOS = %x, want %x (bit 3 set)", got, want)
+	}
+
+	eventState, err := device.ReadProperty(input, uint32(types.PropertyEventState), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(eventState) != 1 || eventState[0].Tag != types.TagEnumerated || eventState[0].Value != uint32(0) {
+		t.Fatalf("event state = %+v, want Enumerated 0", eventState)
+	}
+
+	reliability, err := device.ReadProperty(input, uint32(types.PropertyReliability), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reliability) != 1 || reliability[0].Tag != types.TagEnumerated || reliability[0].Value != uint32(0) {
+		t.Fatalf("reliability = %+v, want Enumerated 0", reliability)
+	}
+}
+
+func TestOutOfServiceWriteRejectsWrongTagAndPriority(t *testing.T) {
+	device := realismScenarioDevice(t)
+	input := ObjectID{Type: uint16(types.ObjectTypeAnalogInput), Instance: 1}
+
+	if err := device.WriteProperty(input, uint32(types.PropertyOutOfService), []Value{{Tag: types.TagReal, Value: float32(1)}}, 0); err != ErrInvalidDataType {
+		t.Fatalf("wrong-tag Out_Of_Service write error = %v, want ErrInvalidDataType", err)
+	}
+	if err := device.WriteProperty(input, uint32(types.PropertyOutOfService), []Value{{Tag: types.TagBoolean, Value: true}}, 8); err != ErrInvalidPriority {
+		t.Fatalf("prioritized Out_Of_Service write error = %v, want ErrInvalidPriority", err)
+	}
+}
+
+func TestOutOfServiceOverridesPresentValueWritability(t *testing.T) {
+	device := realismScenarioDevice(t)
+	input := ObjectID{Type: uint16(types.ObjectTypeAnalogInput), Instance: 1}
+	commandable := ObjectID{Type: uint16(types.ObjectTypeAnalogOutput), Instance: 1}
+
+	// Non-commandable, non-writable object: PV write is normally denied.
+	if err := device.WriteProperty(input, uint32(types.PropertyPresentValue), []Value{{Tag: types.TagReal, Value: float32(99)}}, 0); err != ErrWriteDenied {
+		t.Fatalf("PV write before OOS error = %v, want ErrWriteDenied", err)
+	}
+
+	if err := device.WriteProperty(input, uint32(types.PropertyOutOfService), []Value{{Tag: types.TagBoolean, Value: true}}, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	// While OOS, PV becomes writable (no priority) even though writable: false.
+	if err := device.WriteProperty(input, uint32(types.PropertyPresentValue), []Value{{Tag: types.TagReal, Value: float32(99)}}, 0); err != nil {
+		t.Fatalf("PV write during OOS: %v", err)
+	}
+	values, err := device.ReadProperty(input, uint32(types.PropertyPresentValue), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if values[0].Value != float32(99) {
+		t.Fatalf("PV after OOS write = %v, want 99", values[0].Value)
+	}
+
+	// A commandable object under OOS still enforces priority-array rules.
+	if err := device.WriteProperty(commandable, uint32(types.PropertyOutOfService), []Value{{Tag: types.TagBoolean, Value: true}}, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := device.WriteProperty(commandable, uint32(types.PropertyPresentValue), []Value{{Tag: types.TagReal, Value: float32(1)}}, 6); err != ErrReservedPriority {
+		t.Fatalf("commandable PV write at reserved priority under OOS error = %v, want ErrReservedPriority", err)
+	}
+}
+
+func TestRelinquishDefaultReadableAndNotWritable(t *testing.T) {
+	device := realismScenarioDevice(t)
+	commandable := ObjectID{Type: uint16(types.ObjectTypeAnalogOutput), Instance: 1}
+	nonCommandable := ObjectID{Type: uint16(types.ObjectTypeAnalogInput), Instance: 1}
+
+	values, err := device.ReadProperty(commandable, uint32(types.PropertyRelinquishDefault), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(values) != 1 || values[0].Tag != types.TagReal || values[0].Value != float32(0) {
+		t.Fatalf("relinquish default = %+v, want Real 0", values)
+	}
+
+	if err := device.WriteProperty(commandable, uint32(types.PropertyRelinquishDefault), []Value{{Tag: types.TagReal, Value: float32(1)}}, 0); err != ErrWriteDenied {
+		t.Fatalf("relinquish default write error = %v, want ErrWriteDenied", err)
+	}
+
+	if _, err := device.ReadProperty(nonCommandable, uint32(types.PropertyRelinquishDefault), nil); err != ErrUnknownProperty {
+		t.Fatalf("non-commandable relinquish default read error = %v, want ErrUnknownProperty", err)
 	}
 }
 

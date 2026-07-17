@@ -54,6 +54,7 @@ type ObjectSpec struct {
 	InitialPriority   uint8       `json:"initial_priority,omitempty" yaml:"initial_priority,omitempty"`
 	NumberOfStates    uint32      `json:"number_of_states,omitempty" yaml:"number_of_states,omitempty"`
 	COVIncrement      float64     `json:"cov_increment,omitempty" yaml:"cov_increment,omitempty"`
+	OutOfService      bool        `json:"out_of_service,omitempty" yaml:"out_of_service,omitempty"`
 }
 
 func DecodeScenario(reader io.Reader, format string) (*Scenario, error) {
@@ -264,9 +265,10 @@ func buildObject(spec ObjectSpec) (*Object, error) {
 		return nil, err
 	}
 	object := &Object{
-		ID:         ObjectID{Type: objectType, Instance: spec.Instance},
-		Name:       spec.Name,
-		Properties: make(map[uint32]*Property),
+		ID:           ObjectID{Type: objectType, Instance: spec.Instance},
+		Name:         spec.Name,
+		Properties:   make(map[uint32]*Property),
+		OutOfService: spec.OutOfService,
 	}
 	addCommonProperties(object, spec.Name, spec.Description)
 

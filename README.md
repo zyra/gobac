@@ -23,7 +23,7 @@ The project is being refreshed with an emphasis on protocol fixtures, interopera
 - Segmented APDUs and request retries are not implemented.
 - The client does not yet expose ReadPropertyMultiple or WritePropertyMultiple; the simulator responds to ReadPropertyMultiple.
 - The API identifies remote devices by IPv4 address and assumes the configured BACnet UDP port.
-- Client ReadProperty, WriteProperty, and SubscribeCOV calls currently accept 16-bit object instances; wire codecs and the simulator support the full 22-bit range.
+- `ReadObjectProperty`, `WriteObjectProperty`, and `SubscribeCovObject` accept the full 22-bit object instance range (0..4194303); the CLI's `readprop`/`writeprop` commands use them.
 - The CLI's `scan` command is an exploratory helper and can generate many individual requests on a large device.
 
 ## Building

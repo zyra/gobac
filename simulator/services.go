@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/zyra/gobac/v2/bacnet/pdu"
 	"github.com/zyra/gobac/v2/bacnet/types"
 )
 
@@ -156,6 +157,44 @@ func encodeIAm(device *Device) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
+func decodeWhoHas(data []byte) (*pdu.WhoHas, error) {
+	query := &pdu.WhoHas{}
+	if err := query.UnmarshalBinary(data); err != nil {
+		return nil, err
+	}
+	if query.HasRange && (query.LowLimit > MaxObjectInstance || query.HighLimit > MaxObjectInstance || query.LowLimit > query.HighLimit) {
+		return nil, errors.New("invalid Who-Has device instance range")
+	}
+	return query, nil
+}
+
+func decodeTimeSync(data []byte) (*pdu.TimeSyncPdu, error) {
+	sync := &pdu.TimeSyncPdu{}
+	if err := sync.UnmarshalBinary(data); err != nil {
+		return nil, err
+	}
+	return sync, nil
+}
+
+func encodeIHave(device *Device, object *Object) ([]byte, error) {
+	if device == nil {
+		return nil, errors.New("device is required")
+	}
+	if object == nil {
+		return nil, errors.New("object is required")
+	}
+	deviceID := &types.ObjectId{Type: types.ObjectTypeDevice}
+	if err := deviceID.SetInstanceNumber(device.ID); err != nil {
+		return nil, err
+	}
+	objectID, err := toBACnetObjectID(object.ID)
+	if err != nil {
+		return nil, err
+	}
+	payload := &pdu.IHave{DeviceId: *deviceID, ObjectId: *objectID, ObjectName: object.Name}
+	return payload.MarshalBinary()
+}
+
 func decodeReadPropertyMultiple(data []byte) ([]ReadAccessSpecification, error) {
 	offset := 0
 	result := make([]ReadAccessSpecification, 0, 1)
@@ -206,6 +245,133 @@ func decodeReadPropertyMultiple(data []byte) ([]ReadAccessSpecification, error) 
 	}
 	if len(result) == 0 {
 		return nil, errors.New("ReadPropertyMultiple request is empty")
+	}
+	return result, nil
+}
+
+// PropertyWrite is one BACnetPropertyValue within a WritePropertyMultiple
+// WriteAccessSpecification: the property (and optional array index) to
+// write, the value(s) to write to it, and an optional write priority.
+type PropertyWrite struct {
+	Reference PropertyReference
+	Values    []Value
+	Priority  uint8
+}
+
+// WriteAccessSpecification names one object and the property values to write
+// to it, as carried in a WritePropertyMultiple-Request.
+type WriteAccessSpecification struct {
+	Object     ObjectID
+	Properties []PropertyWrite
+}
+
+func decodeWritePropertyMultiple(data []byte) ([]WriteAccessSpecification, error) {
+	offset := 0
+	result := make([]WriteAccessSpecification, 0, 1)
+	for offset < len(data) {
+		objectBytes, consumed, err := decodeContext(data[offset:], 0)
+		if err != nil || len(objectBytes) != 4 {
+			return nil, errors.New("invalid WritePropertyMultiple object identifier")
+		}
+		offset += consumed
+		objectID := &types.ObjectId{}
+		if err := objectID.UnmarshalBinary(objectBytes); err != nil {
+			return nil, err
+		}
+		opening, err := decodeConstructedTag(data[offset:], 1, true)
+		if err != nil {
+			return nil, err
+		}
+		offset += opening
+
+		specification := WriteAccessSpecification{Object: fromBACnetObjectID(objectID)}
+		for {
+			closing, err := isConstructedTag(data[offset:], 1, false)
+			if err != nil {
+				return nil, err
+			}
+			if closing > 0 {
+				offset += closing
+				break
+			}
+			propertyID, consumed, err := decodeContextUnsigned(data[offset:], 0)
+			if err != nil {
+				return nil, errors.New("invalid WritePropertyMultiple property identifier")
+			}
+			offset += consumed
+			write := PropertyWrite{Reference: PropertyReference{ID: propertyID}}
+			if offset < len(data) {
+				if index, optional, ok := tryDecodeContextUnsigned(data[offset:], 1); ok {
+					offset += optional
+					write.Reference.ArrayIndex = &index
+				}
+			}
+
+			valuesOpening, err := decodeConstructedTag(data[offset:], 2, true)
+			if err != nil {
+				return nil, errors.New("expected WritePropertyMultiple value list")
+			}
+			offset += valuesOpening
+
+			for {
+				valuesClosing, err := isConstructedTag(data[offset:], 2, false)
+				if err != nil {
+					return nil, err
+				}
+				if valuesClosing > 0 {
+					offset += valuesClosing
+					break
+				}
+				if offset >= len(data) {
+					return nil, errors.New("WritePropertyMultiple value list is not closed")
+				}
+				tag := &types.Tag{}
+				headerLength := tag.DecodeTag(data[offset:])
+				if headerLength == 0 || tag.Context || tag.Opening || tag.Closing {
+					return nil, errors.New("invalid WritePropertyMultiple value tag")
+				}
+				payloadLength := tag.LenValue
+				if tag.TagNumber == types.TagNull || tag.TagNumber == types.TagBoolean {
+					payloadLength = 0
+				}
+				if payloadLength < 0 || len(data)-offset-headerLength < payloadLength {
+					return nil, errors.New("WritePropertyMultiple value is truncated")
+				}
+				encodedLength := headerLength + payloadLength
+				propertyValue := &types.PropertyValue{}
+				if err := propertyValue.UnmarshalBinary(data[offset : offset+encodedLength]); err != nil {
+					return nil, err
+				}
+				converted, err := fromPropertyValue(propertyValue)
+				if err != nil {
+					return nil, err
+				}
+				write.Values = append(write.Values, converted)
+				offset += encodedLength
+			}
+			if len(write.Values) == 0 {
+				return nil, errors.New("WritePropertyMultiple property write requires at least one value")
+			}
+
+			if offset < len(data) {
+				if priority, optional, ok := tryDecodeContextUnsigned(data[offset:], 3); ok {
+					if priority < 1 || priority > PrioritySlots {
+						return nil, errWritePriorityOutOfRange
+					}
+					write.Priority = uint8(priority)
+					offset += optional
+				}
+			}
+
+			specification.Properties = append(specification.Properties, write)
+		}
+		if len(specification.Properties) == 0 {
+			return nil, errors.New("WritePropertyMultiple property list is empty")
+		}
+		result = append(result, specification)
+	}
+	if len(result) == 0 {
+		return nil, errors.New("WritePropertyMultiple request is empty")
 	}
 	return result, nil
 }
@@ -367,6 +533,9 @@ func toPropertyValue(value Value) (*types.PropertyValue, error) {
 			}
 			converted = objectID
 		}
+	case types.TagBitString:
+		// Already a types.BitString (see model.go statusFlagsProperty) — no
+		// conversion needed, unlike CharacterString/ObjectId above.
 	}
 	return &types.PropertyValue{Type: types.DataType(value.Tag), Value: converted}, nil
 }

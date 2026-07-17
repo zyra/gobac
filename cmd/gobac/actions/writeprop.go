@@ -11,8 +11,8 @@ import (
 	"github.com/zyra/gobac/v2/bacnet/types"
 )
 
-var writePropertyRequest = func(ctx context.Context, address net.IP, objectType, objectInstance types.Uint16, propertyID types.PropertyId, tag types.DataType, priority uint8, value interface{}) error {
-	return server.WriteProperty(ctx, address, objectType, objectInstance, propertyID, tag, priority, value)
+var writePropertyRequest = func(ctx context.Context, address net.IP, object types.ObjectId, propertyID types.PropertyId, tag types.DataType, priority uint8, value interface{}) error {
+	return server.WriteObjectProperty(ctx, address, object, propertyID, tag, priority, value)
 }
 
 func WritePropAction(ctx *cli.Context) (err error) {
@@ -21,10 +21,11 @@ func WritePropAction(ctx *cli.Context) (err error) {
 		return cli.NewExitError(msg, 1)
 	}
 
-	var objectType, objectInstance types.Uint16
+	var objectType types.Uint16
 	var address net.IP
 	var propertyId types.PropertyId
 	var tag types.DataType
+	var object types.ObjectId
 
 	address = net.ParseIP(ctx.Args().Get(0))
 
@@ -34,10 +35,14 @@ func WritePropAction(ctx *cli.Context) (err error) {
 		objectType = types.Uint16(v)
 	}
 
-	if v, e := strconv.Atoi(ctx.Args().Get(2)); e != nil {
+	instance, e := parseObjectInstance(ctx.Args().Get(2))
+	if e != nil {
 		return e
-	} else {
-		objectInstance = types.Uint16(v)
+	}
+
+	object.Type = objectType
+	if e := object.SetInstanceNumber(instance); e != nil {
+		return e
 	}
 
 	if v, e := strconv.Atoi(ctx.Args().Get(3)); e != nil {
@@ -87,9 +92,9 @@ func WritePropAction(ctx *cli.Context) (err error) {
 
 	priority := uint8(ctx.Uint("priority"))
 
-	logVerbosef("Writing property %d on object %d instance %d...\n", propertyId, objectType, objectInstance)
+	logVerbosef("Writing property %d on object %d instance %d...\n", propertyId, objectType, object.InstanceNumber())
 
-	if err := writePropertyRequest(context.TODO(), address, objectType, objectInstance, propertyId, tag, priority, parsedVal); err != nil {
+	if err := writePropertyRequest(context.TODO(), address, object, propertyId, tag, priority, parsedVal); err != nil {
 		return err
 	} else {
 		fmt.Println("Write was successful!")

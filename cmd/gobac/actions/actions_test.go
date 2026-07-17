@@ -44,12 +44,11 @@ func TestReadPropForwardsParsedArguments(t *testing.T) {
 	defer func() { readPropertyRequest = previous }()
 
 	var address net.IP
-	var objectType, objectInstance types.Uint16
+	var object types.ObjectId
 	var propertyID types.PropertyId
-	readPropertyRequest = func(_ context.Context, gotAddress net.IP, gotObjectType, gotObjectInstance types.Uint16, gotPropertyID types.PropertyId) ([]*types.PropertyValue, error) {
+	readPropertyRequest = func(_ context.Context, gotAddress net.IP, gotObject types.ObjectId, gotPropertyID types.PropertyId) ([]*types.PropertyValue, error) {
 		address = append(net.IP(nil), gotAddress...)
-		objectType = gotObjectType
-		objectInstance = gotObjectInstance
+		object = gotObject
 		propertyID = gotPropertyID
 		return nil, nil
 	}
@@ -58,9 +57,32 @@ func TestReadPropForwardsParsedArguments(t *testing.T) {
 
 	require.NoError(t, err)
 	require.True(t, address.Equal(net.ParseIP("192.0.2.10")))
-	require.Equal(t, types.Uint16(2), objectType)
-	require.Equal(t, types.Uint16(17), objectInstance)
+	require.Equal(t, types.Uint16(2), object.Type)
+	require.Equal(t, uint32(17), object.InstanceNumber())
 	require.Equal(t, types.PropertyId(85), propertyID)
+}
+
+func TestReadPropForwardsFull22BitInstance(t *testing.T) {
+	previous := readPropertyRequest
+	defer func() { readPropertyRequest = previous }()
+
+	var object types.ObjectId
+	readPropertyRequest = func(_ context.Context, _ net.IP, gotObject types.ObjectId, _ types.PropertyId) ([]*types.PropertyValue, error) {
+		object = gotObject
+		return nil, nil
+	}
+
+	err := ReadProp(actionContext("192.0.2.10", "0", "70000", "85"))
+
+	require.NoError(t, err)
+	require.Equal(t, uint32(70000), object.InstanceNumber())
+}
+
+func TestReadPropRejectsInstanceAboveTwentyTwoBits(t *testing.T) {
+	err := ReadProp(actionContext("192.0.2.10", "0", "4194304", "85"))
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "4194303")
 }
 
 func TestWritePropRejectsTooFewArguments(t *testing.T) {
@@ -83,15 +105,14 @@ func TestWritePropForwardsParsedArguments(t *testing.T) {
 	defer func() { writePropertyRequest = previous }()
 
 	var address net.IP
-	var objectType, objectInstance types.Uint16
+	var object types.ObjectId
 	var propertyID types.PropertyId
 	var tag types.DataType
 	var priority uint8
 	var value interface{}
-	writePropertyRequest = func(_ context.Context, gotAddress net.IP, gotObjectType, gotObjectInstance types.Uint16, gotPropertyID types.PropertyId, gotTag types.DataType, gotPriority uint8, gotValue interface{}) error {
+	writePropertyRequest = func(_ context.Context, gotAddress net.IP, gotObject types.ObjectId, gotPropertyID types.PropertyId, gotTag types.DataType, gotPriority uint8, gotValue interface{}) error {
 		address = append(net.IP(nil), gotAddress...)
-		objectType = gotObjectType
-		objectInstance = gotObjectInstance
+		object = gotObject
 		propertyID = gotPropertyID
 		tag = gotTag
 		priority = gotPriority
@@ -103,12 +124,55 @@ func TestWritePropForwardsParsedArguments(t *testing.T) {
 
 	require.NoError(t, err)
 	require.True(t, address.Equal(net.ParseIP("192.0.2.10")))
-	require.Equal(t, types.Uint16(2), objectType)
-	require.Equal(t, types.Uint16(17), objectInstance)
+	require.Equal(t, types.Uint16(2), object.Type)
+	require.Equal(t, uint32(17), object.InstanceNumber())
 	require.Equal(t, types.PropertyId(85), propertyID)
 	require.Equal(t, types.DataType(types.TagBoolean), tag)
 	require.Equal(t, uint8(9), priority)
 	require.Equal(t, true, value)
+}
+
+func TestWritePropRejectsInstanceAboveTwentyTwoBits(t *testing.T) {
+	err := WritePropAction(actionContext("192.0.2.10", "0", "4194304", "85", "1", "true"))
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "4194303")
+}
+
+func TestParseObjectInstance(t *testing.T) {
+	cases := []struct {
+		name     string
+		arg      string
+		want     uint32
+		wantErr  bool
+		errorHas string
+	}{
+		{name: "zero", arg: "0", want: 0},
+		{name: "above old 16-bit ceiling", arg: "65536", want: 65536},
+		{name: "22-bit maximum", arg: "4194303", want: 4194303},
+		{name: "above 22-bit maximum", arg: "4194304", wantErr: true, errorHas: "4194303"},
+		{name: "not a number", arg: "abc", wantErr: true},
+		{name: "negative", arg: "-1", wantErr: true},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := parseObjectInstance(c.arg)
+			if c.wantErr {
+				require.Error(t, err)
+				if c.errorHas != "" {
+					require.Contains(t, err.Error(), c.errorHas)
+				}
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, c.want, got)
+
+			var object types.ObjectId
+			require.NoError(t, object.SetInstanceNumber(got))
+			require.Equal(t, c.want, object.InstanceNumber())
+		})
+	}
 }
 
 func TestBeforeDoesNotStartServerForHelp(t *testing.T) {
