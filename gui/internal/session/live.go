@@ -58,11 +58,9 @@ func (l *Live) Start(cfg Config) error {
 
 	go srv.Listen(context.Background())
 
-	select {
-	case <-srv.Start():
-	case <-time.After(startTimeout):
+	if err := awaitStart(srv.Start(), srv.Errors(), time.After(startTimeout)); err != nil {
 		srv.Shutdown()
-		return errors.New("bacnet server did not start")
+		return err
 	}
 
 	l.mu.Lock()
@@ -86,6 +84,36 @@ func (l *Live) Stop() error {
 
 	srv.Shutdown()
 	<-srv.Close()
+	return nil
+}
+
+// awaitStart blocks until start fires or timeout elapses, then does a
+// non-blocking check of errs for a startup failure that was already queued
+// there. bacnet.Server.Listen reports a ListenContext failure via reportError
+// (which enqueues onto Errors(), a buffered channel) and only then closes
+// Start() (see markStarted in bacnet/server.go), so on the failure path an
+// error is guaranteed to already be sitting in errs by the time start fires
+// — nothing else can have queued anything there first, since the receive
+// goroutines that could report later errors are never started on that path.
+// Without this check, Start() closing was treated as unconditional success,
+// so a listener that failed to bind (e.g. a socket-option failure on a given
+// OS) surfaced only later, as a confusing "server is not listening" error
+// from the first Send call, instead of here.
+func awaitStart(start <-chan struct{}, errs <-chan error, timeout <-chan time.Time) error {
+	select {
+	case <-start:
+	case <-timeout:
+		return errors.New("bacnet server did not start")
+	}
+
+	select {
+	case err := <-errs:
+		if err != nil {
+			return fmt.Errorf("bacnet server failed to start: %w", err)
+		}
+	default:
+	}
+
 	return nil
 }
 
