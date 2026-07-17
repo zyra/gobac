@@ -38,9 +38,23 @@ jobs:
         working-directory: gui
         run: go vet ./...
 
-      - name: Test
+      - name: Test (race)
         working-directory: gui
         run: go test -race ./...
+
+      # The round-trip simulator tests in internal/session self-skip under
+      # -race (see skipUnderRace in simharness_test.go): they hit a
+      # confirmed data race inside the vendored library
+      # (bacnet/server.go:260-263), outside gui/'s editable scope (plan
+      # §6.1). Without this second, non-race run, G2's core read/write/
+      # error-collection assertions would execute in zero CI legs. This
+      # step ensures they still run somewhere in CI; the -race quarantine
+      # itself is a known gap against plan §6.5/§6.7 pending a library-side
+      # fix or a recorded plan-owner amendment — see skipUnderRace's
+      # doc comment.
+      - name: Test (full coverage, non-race)
+        working-directory: gui
+        run: go test ./...
 
       - name: Build
         working-directory: gui

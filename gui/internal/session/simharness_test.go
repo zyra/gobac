@@ -11,14 +11,26 @@ import (
 )
 
 // simDeviceIP is the loopback address the in-process simulator device binds
-// to. It deliberately isn't 127.0.0.1: this library's client always sends
-// requests from the exact port it listens on (see bacnet.Request.Send),
-// so a Live session bound to the "lo" interface ends up sending from
-// 127.0.0.1:<port>. If the simulator device also bound 127.0.0.1:<port>,
-// the two would collide on the identical socket address and the device's
-// reply would loop back to itself instead of reaching the client. Binding
-// the device to a distinct loopback address avoids that, while staying
-// entirely within 127.0.0.0/8 on an ephemeral port.
+// to. It deliberately isn't 127.0.0.1: this library always sends requests
+// to the destination port equal to the client's own configured broadcast
+// port (bacnet/request.go:160, server.GetBroadcastPort()), and on Linux the
+// client's single unicast/broadcast socket binds the wildcard address at
+// that same port (bacnet/server_posix.go:63). Since the tests must set that
+// port to the simulator device's actual (ephemeral) port for requests to
+// reach it, the client's effective loopback source address becomes
+// 127.0.0.1:<port> — identical to what the device would bind if it also
+// used 127.0.0.1:<port>. That collision would make replies loop back to the
+// device's own socket instead of reaching the client. Binding the device to
+// a distinct loopback address avoids that, while staying entirely within
+// 127.0.0.0/8 on an ephemeral port.
+//
+// This is a deviation from plan §6.7 ("UDP-using tests bind only
+// 127.0.0.1"), forced by the library's shared-port addressing model rather
+// than chosen for convenience — see gui-architecture.md §6.7. It needs a
+// plan-owner amendment/escalation, not silent acceptance; gui-validate.yml
+// carries a macOS-only step aliasing 127.0.0.2 onto lo0 to keep this
+// address reachable on that CI leg (macOS does not auto-route all of
+// 127.0.0.0/8 to loopback the way Linux does).
 const simDeviceIP = "127.0.0.2"
 
 // writableObjectInstance and readOnlyObjectInstance are the analog-value
@@ -37,9 +49,17 @@ const (
 // and 112). It is not triggered by anything in gui/ and cannot be fixed
 // from this package: constraint §6.1 forbids editing outside gui/, and the
 // race is inside bacnet/, not gui/. Non-race runs (`go test ./...`) still
-// exercise the exact-value assertions in full; only `-race` runs skip. This
-// is an open blocker pending a library-side fix (or an accepted plan
-// amendment) and needs escalating rather than silently living here forever.
+// exercise the exact-value assertions in full; only `-race` runs skip.
+//
+// gui-validate.yml runs both `go test -race ./...` and a second, non-race
+// `go test ./...` specifically so these round-trip assertions still execute
+// in every CI leg (they previously ran in none, since CI only invoked
+// -race). That is a mitigation, not a fix: the plan's §6.5/§6.7 gate is
+// "tests must pass with -race", and these still don't run under it. This
+// remains an open blocker pending a library-side fix to bacnet/server.go,
+// or an explicit plan-owner amendment accepting the non-race leg as the
+// verification gate for this package — it should not be treated as
+// silently resolved.
 func skipUnderRace(t *testing.T) {
 	t.Helper()
 	if raceEnabled {

@@ -19,11 +19,47 @@ const analogValueType uint16 = uint16(types.ObjectTypeAnalogValue)
 func startLiveAgainst(t *testing.T, port uint16) *Live {
 	t.Helper()
 	live := NewLive()
-	if err := live.Start(Config{Interface: "lo", Port: port, LocalPort: port}); err != nil {
+	if err := live.Start(Config{Interface: loopbackInterfaceName(t), Port: port, LocalPort: port}); err != nil {
 		t.Fatalf("start session: %v", err)
 	}
 	t.Cleanup(func() { _ = live.Stop() })
 	return live
+}
+
+// loopbackInterfaceName returns the name of the local loopback interface
+// (an interface with the loopback flag set and a usable IPv4 address),
+// resolved at test-run time rather than assumed. The OS-level name differs
+// across platforms — "lo" on Linux, "lo0" on macOS/BSD, "Loopback Pseudo-
+// Interface 1" (or similar) on Windows — and bacnet.NewServer resolves
+// Config.Interface via net.InterfaceByName (bacnet/util.go:getNetworkSet),
+// which requires the exact platform name. Deriving it here keeps these
+// tests portable across the 3-OS CI matrix instead of hardcoding "lo".
+func loopbackInterfaceName(t *testing.T) string {
+	t.Helper()
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		t.Fatalf("list network interfaces: %v", err)
+	}
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagLoopback == 0 || iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			ip, _, err := net.ParseCIDR(addr.String())
+			if err != nil {
+				continue
+			}
+			if ip.To4() != nil {
+				return iface.Name
+			}
+		}
+	}
+	t.Fatal("no up loopback interface with an IPv4 address found")
+	return ""
 }
 
 func simDeviceAddress() Address {
@@ -113,19 +149,20 @@ func TestInstanceGuard(t *testing.T) {
 
 func TestStartStopLifecycle(t *testing.T) {
 	live := NewLive()
+	iface := loopbackInterfaceName(t)
 
-	if err := live.Start(Config{Interface: "lo"}); err != nil {
+	if err := live.Start(Config{Interface: iface}); err != nil {
 		t.Fatalf("first Start: %v", err)
 	}
 	if err := live.Stop(); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
-	if err := live.Start(Config{Interface: "lo"}); err != nil {
+	if err := live.Start(Config{Interface: iface}); err != nil {
 		t.Fatalf("Start after Stop: %v", err)
 	}
 	defer live.Stop()
 
-	if err := live.Start(Config{Interface: "lo"}); err != ErrAlreadyStarted {
+	if err := live.Start(Config{Interface: iface}); err != ErrAlreadyStarted {
 		t.Fatalf("expected ErrAlreadyStarted for a double Start, got: %v", err)
 	}
 }
