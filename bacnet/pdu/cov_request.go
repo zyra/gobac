@@ -20,8 +20,10 @@ func (p *SubscribeCov) MarshalBinary() ([]byte, error) {
 		return nil, errors.New("COV subscription object identifier is required")
 	}
 	buff := buffPool.Get().(*bytes.Buffer)
-	defer buff.Reset()
-	defer buffPool.Put(buff)
+	defer func() {
+		buff.Reset()
+		buffPool.Put(buff)
+	}()
 
 	t := &types.Tag{}
 

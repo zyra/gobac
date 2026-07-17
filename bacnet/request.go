@@ -295,8 +295,10 @@ func (r *Request) UnmarshalBinary(b []byte) error {
 
 	buff := buffPool.Get().(*bytes.Buffer)
 	buff.Write(b)
-	defer buff.Reset()
-	defer buffPool.Put(buff)
+	defer func() {
+		buff.Reset()
+		buffPool.Put(buff)
+	}()
 
 	if err := r.Header.UnmarshalBinary(buff.Next(4)); err != nil {
 		return err
