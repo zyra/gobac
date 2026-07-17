@@ -36,10 +36,13 @@ Broadcast behavior depends on the host network configuration. Multi-IP scenarios
 - TimeSynchronization and UTCTimeSynchronization, storing the received date and time onto the device's Local_Date and Local_Time properties (readable only after a sync; the simulator has no UTC-offset model, so UTCTimeSynchronization values are stored exactly as received)
 - Device, analog, binary, and multi-state object scenarios
 - Deterministic manual clocks for subscription tests
+- Status_Flags, Event_State, Reliability, Out_Of_Service, and (for commandable objects) Relinquish_Default on every analog/binary/multi-state object, computed at read time rather than stored
 
 Confirmed COV notifications use valid confirmed-request APDUs and invoke identifiers. The initial simulator does not retransmit notifications when an acknowledgment is missing.
 
 For a commandable object, `relinquish_default` is the fallback value. An explicit `present_value` starts as a command at `initial_priority` (default 16) so the configured initial state is observable and can later be relinquished.
+
+Every analog, binary, and multi-state object also exposes Status_Flags (111), Event_State (36), and Reliability (103) as read-only properties, and Out_Of_Service (81) as a plain (non-prioritized) writable Boolean; a commandable object additionally exposes Relinquish_Default (104) as read-only. Set `out_of_service: true` on an object spec to start it out of service. Status_Flags is a 4-bit BitString `{in-alarm, fault, overridden, out-of-service}`; in-alarm, fault, and overridden are always false in this wave, and out-of-service mirrors the object's live Out_Of_Service value. While an object is out of service, its Present_Value becomes writable (bypassing the priority array) even if the object is not otherwise writable; commandable objects keep normal priority-array write behavior regardless of Out_Of_Service.
 
 ## Current constraints
 

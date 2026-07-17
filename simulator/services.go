@@ -533,6 +533,9 @@ func toPropertyValue(value Value) (*types.PropertyValue, error) {
 			}
 			converted = objectID
 		}
+	case types.TagBitString:
+		// Already a types.BitString (see model.go statusFlagsProperty) — no
+		// conversion needed, unlike CharacterString/ObjectId above.
 	}
 	return &types.PropertyValue{Type: types.DataType(value.Tag), Value: converted}, nil
 }

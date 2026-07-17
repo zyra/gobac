@@ -218,6 +218,30 @@ func TestSubscribeCOVServiceCodec(t *testing.T) {
 	}
 }
 
+func TestToPropertyValuePassesBitStringThroughUnchanged(t *testing.T) {
+	converted, err := toPropertyValue(Value{Tag: types.TagBitString, Value: types.BitString{0x08}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := converted.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []byte{0x82, 0x00, 0x10}
+	if !bytes.Equal(encoded, want) {
+		t.Fatalf("encoded status-flags-shaped bit string = %x, want %x", encoded, want)
+	}
+
+	var decoded types.PropertyValue
+	if err := decoded.UnmarshalBinary(encoded); err != nil {
+		t.Fatal(err)
+	}
+	decodedBits, ok := decoded.Value.(types.BitString)
+	if !ok || !bytes.Equal(decodedBits, types.BitString{0x08}) {
+		t.Fatalf("decoded bit string = %+v, want types.BitString{0x08}", decoded.Value)
+	}
+}
+
 func TestSubscribeCOVAcceptsIndependentOptionalFields(t *testing.T) {
 	prefix := []byte{0x09, 7, 0x1c, 0x00, 0x00, 0x00, 0x21}
 	tests := []struct {

@@ -600,6 +600,125 @@ func TestExpandPropertyReferencesIncludesPriorityArrayForCommandableObjects(t *t
 	}
 }
 
+func TestExpandPropertyReferencesAllIncludesRealismProperties(t *testing.T) {
+	commandableObjectID := ObjectID{Type: uint16(types.ObjectTypeAnalogOutput), Instance: 1}
+	defaultValue := Value{Tag: types.TagReal, Value: float32(0)}
+	commandableDevice := &Device{
+		ID: 1,
+		Objects: map[ObjectID]*Object{
+			commandableObjectID: {
+				ID: commandableObjectID,
+				Properties: map[uint32]*Property{
+					uint32(types.PropertyPresentValue): {
+						ID:                uint32(types.PropertyPresentValue),
+						RelinquishDefault: &defaultValue,
+						Values:            []Value{{Tag: types.TagReal, Value: float32(0)}},
+					},
+					uint32(types.PropertyObjectName): {
+						ID:     uint32(types.PropertyObjectName),
+						Values: []Value{{Tag: types.TagCharacterString, Value: "command"}},
+					},
+				},
+			},
+		},
+	}
+	spec := ReadAccessSpecification{Object: commandableObjectID, Properties: []PropertyReference{{ID: uint32(types.PropertyAll)}}}
+	references := expandPropertyReferences(commandableDevice, spec)
+	got := make(map[uint32]bool, len(references))
+	for _, reference := range references {
+		got[reference.ID] = true
+	}
+	for _, want := range []uint32{
+		uint32(types.PropertyPresentValue),
+		uint32(types.PropertyObjectName),
+		uint32(types.PropertyStatusFlags),
+		uint32(types.PropertyEventState),
+		uint32(types.PropertyReliability),
+		uint32(types.PropertyOutOfService),
+		uint32(types.PropertyPriorityArray),
+		uint32(types.PropertyRelinquishDefault),
+	} {
+		if !got[want] {
+			t.Fatalf("expanded references = %+v, missing property %d", references, want)
+		}
+	}
+	if len(got) != 8 {
+		t.Fatalf("expanded references = %+v, want exactly 8 distinct property ids, got %d", references, len(got))
+	}
+
+	nonCommandableObjectID := ObjectID{Type: uint16(types.ObjectTypeAnalogInput), Instance: 2}
+	nonCommandableDevice := &Device{
+		ID: 2,
+		Objects: map[ObjectID]*Object{
+			nonCommandableObjectID: {
+				ID: nonCommandableObjectID,
+				Properties: map[uint32]*Property{
+					uint32(types.PropertyPresentValue): {
+						ID:     uint32(types.PropertyPresentValue),
+						Values: []Value{{Tag: types.TagReal, Value: float32(10)}},
+					},
+				},
+			},
+		},
+	}
+	nonCommandableSpec := ReadAccessSpecification{Object: nonCommandableObjectID, Properties: []PropertyReference{{ID: uint32(types.PropertyAll)}}}
+	nonCommandableReferences := expandPropertyReferences(nonCommandableDevice, nonCommandableSpec)
+	nonCommandableGot := make(map[uint32]bool, len(nonCommandableReferences))
+	for _, reference := range nonCommandableReferences {
+		nonCommandableGot[reference.ID] = true
+	}
+	for _, want := range []uint32{
+		uint32(types.PropertyPresentValue),
+		uint32(types.PropertyStatusFlags),
+		uint32(types.PropertyEventState),
+		uint32(types.PropertyReliability),
+		uint32(types.PropertyOutOfService),
+	} {
+		if !nonCommandableGot[want] {
+			t.Fatalf("non-commandable expanded references = %+v, missing property %d", nonCommandableReferences, want)
+		}
+	}
+	for _, absent := range []uint32{uint32(types.PropertyPriorityArray), uint32(types.PropertyRelinquishDefault)} {
+		if nonCommandableGot[absent] {
+			t.Fatalf("non-commandable expansion incorrectly included property %d: %+v", absent, nonCommandableReferences)
+		}
+	}
+}
+
+func TestOutOfServiceWriteDoesNotTriggerPresentValueCOVNotification(t *testing.T) {
+	device := applicationTestDevice()
+	objectID := ObjectID{Type: uint16(types.ObjectTypeAnalogValue), Instance: 1}
+	application := NewApplication(device, RealClock{})
+
+	subscriber := transport.NewEndpoint(net.IPv4(192, 0, 2, 1), 47808)
+	presentValue, err := device.ReadProperty(objectID, uint32(types.PropertyPresentValue), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := SubscriptionKey{Subscriber: subscriber.String(), ProcessID: 1, Object: objectID}
+	application.Subscriptions.Subscribe(Subscription{
+		Key:       key,
+		Lifetime:  time.Hour,
+		LastValue: presentValue,
+	})
+	application.subscribers[key] = subscriber
+
+	outOfServicePayload, err := encodeReadPropertyResult(objectID, PropertyReference{ID: uint32(types.PropertyOutOfService)}, []Value{{Tag: types.TagBoolean, Value: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := bacnet.NewRequest()
+	defer request.Release()
+	request.Apdu.Payload = outOfServicePayload
+	responses, err := application.handleWriteProperty(context.Background(), &responder.Request{Packet: request})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(responses) != 1 || responses[0].PDUType != types.PduTypeSimpleAck {
+		t.Fatalf("Out_Of_Service write responses = %+v, err = %v, want a single SimpleACK and no COV notification", responses, err)
+	}
+}
+
 func TestApplicationPrunesExpiredSubscriberEndpoints(t *testing.T) {
 	clock := NewManualClock(time.Unix(1000, 0))
 	application := NewApplication(applicationTestDevice(), clock)
