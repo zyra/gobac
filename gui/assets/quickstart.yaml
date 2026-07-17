@@ -1,0 +1,58 @@
+# Bundled quickstart scenario for the in-process simulator (G8). Loopback,
+# multi-port: each device gets its own fixed high UDP port so the three can
+# run side by side on one host without colliding with each other or with
+# BACnet/IP's well-known port 47808 (gui-architecture.md §4.5).
+#
+# Fixed, distinct ports rather than "port: 0" per device: the simulator
+# library fills an unset (zero) device port from network.port at decode
+# time (simulator/scenario.go:applyScenarioDefaults), so every "port: 0"
+# device in one scenario collapses onto the same literal port and
+# Scenario.Validate rejects the file as a duplicate endpoint before this
+# asset ever reaches the runner. internal/simrun.Start still honors a
+# genuinely zero DeviceSpec.Port (OS-assigned, for scenarios built directly
+# in code rather than decoded from YAML) — see runner.go.
+version: 1
+network:
+  mode: multi-port
+  interface: 127.0.0.2
+devices:
+  - id: 1001
+    name: Boiler
+    port: 47901
+    objects:
+      - type: analog-input
+        instance: 1
+        name: Supply Temp
+        present_value: 72.5
+        units: 62
+      - type: analog-value
+        instance: 2
+        name: Setpoint
+        present_value: 70.0
+        commandable: true
+        relinquish_default: 68.0
+  - id: 1002
+    name: AHU
+    port: 47902
+    objects:
+      - type: binary-output
+        instance: 1
+        name: Fan
+        present_value: inactive
+        commandable: true
+      - type: multi-state-value
+        instance: 1
+        name: Mode
+        number_of_states: 3
+        present_value: 1
+        writable: true
+  - id: 1003
+    name: Lab Sensor
+    port: 47903
+    objects:
+      - type: analog-input
+        instance: 1
+        name: Room Temp
+        present_value: 21.7
+        units: 62
+        cov_increment: 0.5
