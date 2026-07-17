@@ -429,6 +429,10 @@ func (a *Apdu) decodeUnconfirmedApdu(data []byte) error {
 		response := &CovNotification{}
 		a.ResponseData = response
 		return response.UnmarshalBinary(data)
+	case types.UnconfirmedServiceIHave:
+		response := &IHave{}
+		a.ResponseData = response
+		return response.UnmarshalBinary(data)
 	}
 	return nil
 }
