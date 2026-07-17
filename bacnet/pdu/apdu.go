@@ -383,6 +383,13 @@ func (a *Apdu) decodeConfirmedApdu(data []byte) error {
 		response := &CovNotification{}
 		a.ResponseData = response
 		return response.UnmarshalBinary(data)
+	case types.ConfirmedServiceReadPropertyMultiple:
+		if a.PduType != types.PduTypeComplexAck {
+			return nil
+		}
+		response := &ReadPropertyMultipleAck{}
+		a.ResponseData = response
+		return response.UnmarshalBinary(data)
 	}
 	return nil
 }
