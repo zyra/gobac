@@ -196,10 +196,9 @@ func (v *QuickstartView) stop() {
 		for _, d := range v.rows {
 			v.devices.Remove(store.DeviceKey{Instance: d.ID, IP: d.Addr})
 		}
-		v.running = nil
-		v.rows = nil
-
 		fyne.Do(func() {
+			v.running = nil
+			v.rows = nil
 			v.list.Refresh()
 			v.startBtn.Enable()
 			v.stopBtn.Disable()
