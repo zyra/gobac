@@ -157,8 +157,21 @@ jobs:
   #     used below for darwin/arm64.
   #   No target was omitted: a currently-valid label exists for all six
   #   OS/arch combinations.
+  # Note on ordering: the release is published (non-draft) by the "release"
+  # job before this job's assets attach, so for a short window the release
+  # page shows only the CLI assets, and a failed GUI leg leaves that
+  # target's GUI asset missing until the leg is re-run. This
+  # augment-after-publish design is intentional: it keeps the existing
+  # release job as the sole creator and lets each GUI leg retry
+  # independently without re-uploading everything.
   gui-release:
     needs: [release, gui-validate]
+    defaults:
+      run:
+        # Every run step in this job must use bash: the default shell on
+        # the Windows runners is PowerShell, where `set -euo pipefail`
+        # and ${VAR} expansions in these scripts would fail.
+        shell: bash
     strategy:
       fail-fast: false
       matrix:
@@ -205,6 +218,11 @@ jobs:
         run: |
           set -euo pipefail
 
+          # The Windows runner images expose only `python` on PATH, not
+          # `python3` (actions/runner-images#2461), while the Linux and
+          # macOS images have `python3`, so resolve whichever exists.
+          PY="$(command -v python3 || command -v python)"
+
           asset="gobac-gui-${GITHUB_REF_NAME}-${GOOS}-${GOARCH}"
           stage="$(mktemp -d)"
           package="${stage}/${asset}"
@@ -221,12 +239,12 @@ jobs:
             -o "${package}/${binary}" \
             .)
 
-          cp LICENSE "${package}/"
+          cp LICENSE README.md "${package}/"
 
           mkdir -p dist
           if [[ "${GOOS}" == "windows" ]]; then
             archive="${PWD}/dist/${asset}.zip"
-            (cd "${stage}" && python3 -m zipfile -c "${archive}" "${asset}")
+            (cd "${stage}" && "${PY}" -m zipfile -c "${archive}" "${asset}")
           else
             tar -C "${stage}" -czf "dist/${asset}.tar.gz" "${asset}"
           fi
@@ -239,9 +257,10 @@ jobs:
           # (already required above for zip packaging, and present on
           # every GitHub-hosted runner family) for a result that's
           # portable across all three OSes.
-          python3 -c 'import hashlib, pathlib, sys; asset, goos, goarch = sys.argv[1:4]; dist = pathlib.Path("dist"); out = dist / f"SHA256SUMS-gui-{goos}-{goarch}"; out.write_text("\n".join(f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}" for p in sorted(dist.glob(f"{asset}.*"))) + "\n")' "${asset}" "${GOOS}" "${GOARCH}"
+          "${PY}" -c 'import hashlib, pathlib, sys; asset, goos, goarch = sys.argv[1:4]; dist = pathlib.Path("dist"); out = dist / f"SHA256SUMS-gui-{goos}-{goarch}"; out.write_text("\n".join(f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}" for p in sorted(dist.glob(f"{asset}.*"))) + "\n")' "${asset}" "${GOOS}" "${GOARCH}"
 
       - name: Upload GUI release asset
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
