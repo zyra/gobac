@@ -263,17 +263,27 @@ func (v *EditorView) currentObject() *simulator.ObjectSpec {
 	return &dev.Objects[v.selectedObject]
 }
 
+// selectDevice switches the detail forms to device idx (-1 for none),
+// rebuilding both the device and (now-cleared) object forms and repainting
+// field-error hints on the freshly built widgets — needed because
+// rebuildDeviceForm/rebuildObjectForm construct brand new Entry/Select
+// widgets that start with no validation hint applied.
 func (v *EditorView) selectDevice(idx int) {
 	v.selectedDevice = idx
 	v.selectedObject = -1
 	v.rebuildDeviceForm()
 	v.objectList.Refresh()
 	v.rebuildObjectForm()
+	v.revalidate()
 }
 
+// selectObject switches the object detail form to object idx (-1 for
+// none) on the currently selected device; see selectDevice for why this
+// also revalidates.
 func (v *EditorView) selectObject(idx int) {
 	v.selectedObject = idx
 	v.rebuildObjectForm()
+	v.revalidate()
 }
 
 // ---- device add/remove ----
