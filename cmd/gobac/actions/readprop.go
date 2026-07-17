@@ -10,8 +10,21 @@ import (
 	"github.com/zyra/gobac/v2/bacnet/types"
 )
 
-var readPropertyRequest = func(ctx context.Context, address net.IP, objectType, objectInstance types.Uint16, propertyID types.PropertyId) ([]*types.PropertyValue, error) {
-	return server.ReadProperty(ctx, address, objectType, objectInstance, propertyID)
+var readPropertyRequest = func(ctx context.Context, address net.IP, object types.ObjectId, propertyID types.PropertyId) ([]*types.PropertyValue, error) {
+	return server.ReadObjectProperty(ctx, address, object, propertyID)
+}
+
+// parseObjectInstance parses a BACnet object instance CLI argument, accepting
+// the full 22-bit instance range (0..4194303).
+func parseObjectInstance(arg string) (uint32, error) {
+	v, err := strconv.ParseUint(arg, 10, 32)
+	if err != nil {
+		return 0, err
+	}
+	if v > types.BacnetMaxInstance {
+		return 0, fmt.Errorf("object instance %d exceeds maximum of %d", v, types.BacnetMaxInstance)
+	}
+	return uint32(v), nil
 }
 
 func ReadProp(ctx *cli.Context) (err error) {
@@ -20,9 +33,10 @@ func ReadProp(ctx *cli.Context) (err error) {
 		return cli.NewExitError(msg, 1)
 	}
 
-	var objectType, objectInstance types.Uint16
+	var objectType types.Uint16
 	var address net.IP
 	var propertyId types.PropertyId
+	var object types.ObjectId
 
 	address = net.ParseIP(ctx.Args().Get(0))
 
@@ -32,10 +46,14 @@ func ReadProp(ctx *cli.Context) (err error) {
 		objectType = types.Uint16(v)
 	}
 
-	if v, e := strconv.Atoi(ctx.Args().Get(2)); e != nil {
+	instance, e := parseObjectInstance(ctx.Args().Get(2))
+	if e != nil {
 		return e
-	} else {
-		objectInstance = types.Uint16(v)
+	}
+
+	object.Type = objectType
+	if e := object.SetInstanceNumber(instance); e != nil {
+		return e
 	}
 
 	if v, e := strconv.Atoi(ctx.Args().Get(3)); e != nil {
@@ -44,9 +62,9 @@ func ReadProp(ctx *cli.Context) (err error) {
 		propertyId = types.PropertyId(v)
 	}
 
-	logVerbosef("Reading property %d on object %d instance %d...\n", propertyId, objectType, objectInstance)
+	logVerbosef("Reading property %d on object %d instance %d...\n", propertyId, objectType, object.InstanceNumber())
 
-	prop, err := readPropertyRequest(context.TODO(), address, objectType, objectInstance, propertyId)
+	prop, err := readPropertyRequest(context.TODO(), address, object, propertyId)
 
 	if err != nil {
 		return err

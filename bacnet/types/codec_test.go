@@ -160,6 +160,32 @@ func TestObjectIdentifierPreservesTwentyTwoBitInstance(t *testing.T) {
 	}
 }
 
+func TestObjectIdRoundTrip22Bit(t *testing.T) {
+	var objectID ObjectId
+	objectID.Type = 0
+	if err := objectID.SetInstanceNumber(70000); err != nil {
+		t.Fatal(err)
+	}
+
+	encoded, err := objectID.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []byte{0x00, 0x01, 0x11, 0x70}
+	if !bytes.Equal(encoded, want) {
+		t.Fatalf("object identifier encoded as %x, want %x", encoded, want)
+	}
+
+	var decoded ObjectId
+	if err := decoded.UnmarshalBinary(encoded); err != nil {
+		t.Fatal(err)
+	}
+	if got := decoded.InstanceNumber(); got != 70000 {
+		t.Fatalf("instance = %d, want 70000", got)
+	}
+}
+
 func TestDoubleUsesNetworkByteOrder(t *testing.T) {
 	encoded, err := Double(1).MarshalBinary()
 	if err != nil {

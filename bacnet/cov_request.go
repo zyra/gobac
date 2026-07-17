@@ -3,6 +3,7 @@ package bacnet
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/zyra/gobac/v2/bacnet/pdu"
 	"github.com/zyra/gobac/v2/bacnet/types"
 	"net"
@@ -33,6 +34,21 @@ func (s *Server) SubscribeCov(ctx context.Context, deviceIP net.IP, objectType t
 // SubscribeCovWithProcessID subscribes using the complete BACnet Unsigned32
 // subscriber process identifier.
 func (s *Server) SubscribeCovWithProcessID(ctx context.Context, deviceIP net.IP, objectType types.ObjectType, objectInstance types.Uint16, processID uint32, cancel bool) (*CovNotifier, error) {
+	return s.subscribeCov(ctx, deviceIP, types.ObjectId{Type: objectType, Instance: objectInstance}, processID, cancel)
+}
+
+// SubscribeCovObject is SubscribeCovWithProcessID with a full 22-bit object instance.
+func (s *Server) SubscribeCovObject(ctx context.Context, deviceIP net.IP, object types.ObjectId, processID uint32, cancel bool) (*CovNotifier, error) {
+	if object.InstanceNumber() > types.BacnetMaxInstance {
+		return nil, fmt.Errorf("object instance %d exceeds maximum of %d", object.InstanceNumber(), types.BacnetMaxInstance)
+	}
+	if object.Type >= types.BacnetMaxObject+1 {
+		return nil, fmt.Errorf("object type %d exceeds maximum of %d", object.Type, types.BacnetMaxObject)
+	}
+	return s.subscribeCov(ctx, deviceIP, object, processID, cancel)
+}
+
+func (s *Server) subscribeCov(ctx context.Context, deviceIP net.IP, object types.ObjectId, processID uint32, cancel bool) (*CovNotifier, error) {
 	if deviceIP == nil || deviceIP.Equal(net.IP{0, 0, 0, 0}) {
 		return nil, errors.New("received a nil or empty device IP")
 	}
@@ -54,7 +70,7 @@ func (s *Server) SubscribeCovWithProcessID(ctx context.Context, deviceIP net.IP,
 	}()
 
 	req.SetConfirmedService(types.ConfirmedServiceSubscribeCov, newSubscribeCovPayload(
-		objectType, objectInstance, processID, cancel,
+		object, processID, cancel,
 	), deviceIP)
 
 	if err := req.Send(deviceIP, s); err != nil {
@@ -104,12 +120,9 @@ func (s *Server) SubscribeCovWithProcessID(ctx context.Context, deviceIP net.IP,
 	}
 }
 
-func newSubscribeCovPayload(objectType types.ObjectType, objectInstance types.Uint16, processID uint32, cancel bool) *pdu.SubscribeCov {
+func newSubscribeCovPayload(object types.ObjectId, processID uint32, cancel bool) *pdu.SubscribeCov {
 	return &pdu.SubscribeCov{
-		ObjectId: &types.ObjectId{
-			Instance: objectInstance,
-			Type:     objectType,
-		},
+		ObjectId:            &object,
 		ProcessIdentifier:   uint8(processID),
 		ProcessIdentifier32: processID,
 		Cancel:              cancel,
