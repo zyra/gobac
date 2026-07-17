@@ -2,6 +2,8 @@
 package main
 
 import (
+	"fmt"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 
@@ -30,6 +32,18 @@ func main() {
 	shell := ui.NewAppShell(a, window)
 
 	sess := session.NewLive()
+	settings := ui.LoadSettings(a)
+	if err := session.StartFromSettings(sess, settings.Interface, settings.Port); err != nil {
+		// Non-fatal: the simulator quickstart and scenario editor don't
+		// need a running session, so launch continues and the failure is
+		// surfaced in the status bar instead of aborting.
+		shell.SetStatus(fmt.Sprintf("Session not started: %v", err))
+	}
+	window.SetCloseIntercept(func() {
+		_ = session.Shutdown(sess)
+		window.Close()
+	})
+
 	devices := store.NewDeviceStore()
 	objects := store.NewObjectCache()
 

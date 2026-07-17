@@ -54,6 +54,23 @@ func validatePort(text string) error {
 	return nil
 }
 
+// trySaveSettings validates portText (via validatePort) and, if valid,
+// persists Settings{iface, portText} to a. It returns the validation error
+// without saving anything when portText is out of range, so the settings
+// dialog's confirm handler can't persist a port validatePort would have
+// rejected.
+func trySaveSettings(a fyne.App, iface, portText string) error {
+	if err := validatePort(portText); err != nil {
+		return err
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		return err
+	}
+	SaveSettings(a, Settings{Interface: iface, Port: port})
+	return nil
+}
+
 // NewSettingsDialog builds the "Settings…" dialog: Interface and UDP Port
 // fields, seeded from the current preferences, saving on confirm.
 func NewSettingsDialog(a fyne.App, w fyne.Window) dialog.Dialog {
@@ -75,11 +92,10 @@ func NewSettingsDialog(a fyne.App, w fyne.Window) dialog.Dialog {
 		if !ok {
 			return
 		}
-		port, err := strconv.Atoi(portEntry.Text)
-		if err != nil {
+		if err := trySaveSettings(a, ifaceEntry.Text, portEntry.Text); err != nil {
+			dialog.ShowError(err, w)
 			return
 		}
-		SaveSettings(a, Settings{Interface: ifaceEntry.Text, Port: port})
 	}, w)
 }
 
