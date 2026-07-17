@@ -261,9 +261,8 @@ func TestSubmitWriteCallsFakeWriteWithExactRequest(t *testing.T) {
 	}
 	call := fake.writeCalls[0]
 
-	wantAddr := session.Address{IP: view.deviceAddr.IP}
-	if call.dev.IP.String() != wantAddr.IP.String() {
-		t.Errorf("Write dev = %+v, want %+v", call.dev, wantAddr)
+	if got, want := call.dev.IP.String(), "192.0.2.1"; got != want {
+		t.Errorf("Write dev IP = %q, want %q", got, want)
 	}
 	wantObj := session.ObjectRef{Type: 2, Instance: 1}
 	if call.obj != wantObj {
