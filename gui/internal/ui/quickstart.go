@@ -135,8 +135,6 @@ func (v *QuickstartView) start() {
 		}
 
 		rows := r.Devices()
-		v.running = r
-		v.rows = rows
 		for _, d := range rows {
 			v.devices.Upsert(store.DeviceRow{
 				Key:    store.DeviceKey{Instance: d.ID, IP: d.Addr},
@@ -149,6 +147,8 @@ func (v *QuickstartView) start() {
 		go v.watchErrors(r, v.errWatchStop)
 
 		fyne.Do(func() {
+			v.running = r
+			v.rows = rows
 			v.list.Refresh()
 			v.startBtn.Disable()
 			v.stopBtn.Enable()
