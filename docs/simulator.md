@@ -29,6 +29,7 @@ Broadcast behavior depends on the host network configuration. Multi-IP scenarios
 - Who-Is range filtering and broadcast I-Am replies
 - ReadProperty, including array index zero, individual elements, and all elements
 - WriteProperty with writable checks and command priorities 1 through 16, excluding reserved priority 6
+- WritePropertyMultiple with atomic validate-then-apply semantics and the standard WritePropertyMultiple-Error on failure
 - ReadPropertyMultiple with per-property values or errors and the `ALL` selector
 - SubscribeCOV registration, renewal, cancellation, expiry, initial notification, and notification after successful writes
 - Device, analog, binary, and multi-state object scenarios

@@ -203,6 +203,183 @@ func TestApplicationWritePropertyPriorityErrors(t *testing.T) {
 	}
 }
 
+// writePropertyMultipleTestPayload is the WritePropertyMultiple-Request wire
+// encoding for two objects: analog-value 1 present-value <- Real 21.0
+// priority 8, and binary-value 2 present-value <- Enumerated 1, no priority.
+var writePropertyMultipleTestPayload = []byte{
+	0x0c, 0x00, 0x80, 0x00, 0x01, // [0] objectIdentifier AV:1
+	0x1e,       // [1] opening
+	0x09, 0x55, //   [0] propertyIdentifier 85
+	0x2e,                         //   [2] opening
+	0x44, 0x41, 0xa8, 0x00, 0x00, //     Real 21.0
+	0x2f,       //   [2] closing
+	0x39, 0x08, //   [3] priority 8
+	0x1f, // [1] closing
+
+	0x0c, 0x01, 0x40, 0x00, 0x02, // [0] objectIdentifier BV:2
+	0x1e,       // [1] opening
+	0x09, 0x55, //   [0] propertyIdentifier 85
+	0x2e,       //   [2] opening
+	0x91, 0x01, //     Enumerated 1
+	0x2f, //   [2] closing
+	0x1f, // [1] closing (no priority)
+}
+
+func writePropertyMultipleTestDevice(binaryWritable bool) (*Device, ObjectID, ObjectID) {
+	analogID := ObjectID{Type: uint16(types.ObjectTypeAnalogValue), Instance: 1}
+	binaryID := ObjectID{Type: uint16(types.ObjectTypeBinaryValue), Instance: 2}
+	defaultValue := Value{Tag: types.TagReal, Value: float32(20.5)}
+	device := &Device{
+		ID:       70000,
+		Name:     "Test Device",
+		VendorID: 260,
+		Objects: map[ObjectID]*Object{
+			analogID: {
+				ID:   analogID,
+				Name: "Setpoint",
+				Properties: map[uint32]*Property{
+					// Commandable (has a relinquish default) so the priority-8
+					// write in writePropertyMultipleTestPayload is valid.
+					uint32(types.PropertyPresentValue): {
+						ID:                uint32(types.PropertyPresentValue),
+						Writable:          true,
+						Scalar:            true,
+						ExpectedTag:       types.TagReal,
+						RelinquishDefault: &defaultValue,
+					},
+				},
+			},
+			binaryID: {
+				ID:   binaryID,
+				Name: "Status",
+				Properties: map[uint32]*Property{
+					uint32(types.PropertyPresentValue): {
+						ID:          uint32(types.PropertyPresentValue),
+						Writable:    binaryWritable,
+						Scalar:      true,
+						ExpectedTag: types.TagEnumerated,
+						Values:      []Value{{Tag: types.TagEnumerated, Value: uint32(0)}},
+					},
+				},
+			},
+		},
+	}
+	return device, analogID, binaryID
+}
+
+func TestApplicationWritePropertyMultipleAllValid(t *testing.T) {
+	device, analogID, binaryID := writePropertyMultipleTestDevice(true)
+	application := NewApplication(device, RealClock{})
+
+	subscriber := transport.NewEndpoint(net.IPv4(192, 0, 2, 1), 47808)
+	key := SubscriptionKey{Subscriber: subscriber.String(), ProcessID: 1, Object: analogID}
+	application.Subscriptions.Subscribe(Subscription{
+		Key:       key,
+		Lifetime:  time.Hour,
+		LastValue: []Value{{Tag: types.TagReal, Value: float32(20.5)}},
+	})
+	application.subscribers[key] = subscriber
+
+	request := bacnet.NewRequest()
+	defer request.Release()
+	request.Apdu.Payload = writePropertyMultipleTestPayload
+	responses, err := application.handleWritePropertyMultiple(context.Background(), &responder.Request{Packet: request})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(responses) != 2 || responses[0].PDUType != types.PduTypeSimpleAck {
+		t.Fatalf("responses = %+v, err = %v", responses, err)
+	}
+	notification := responses[1]
+	if notification.PDUType != types.PduTypeUnconfirmedServiceRequest || notification.ServiceChoice != types.UnconfirmedServiceCovNotification {
+		t.Fatalf("notification response = %+v", notification)
+	}
+
+	analogValues, err := device.ReadProperty(analogID, uint32(types.PropertyPresentValue), nil)
+	if err != nil || len(analogValues) != 1 || analogValues[0].Value != types.Real(21.0) {
+		t.Fatalf("analog present-value = %+v, err = %v", analogValues, err)
+	}
+	binaryValues, err := device.ReadProperty(binaryID, uint32(types.PropertyPresentValue), nil)
+	if err != nil || len(binaryValues) != 1 || binaryValues[0].Value != uint32(1) {
+		t.Fatalf("binary present-value = %+v, err = %v", binaryValues, err)
+	}
+}
+
+func TestApplicationWritePropertyMultipleSecondWriteInvalidIsAtomic(t *testing.T) {
+	device, analogID, binaryID := writePropertyMultipleTestDevice(false)
+	application := NewApplication(device, RealClock{})
+
+	request := bacnet.NewRequest()
+	defer request.Release()
+	request.Apdu.Payload = writePropertyMultipleTestPayload
+	responses, err := application.handleWritePropertyMultiple(context.Background(), &responder.Request{Packet: request})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(responses) != 1 || responses[0].PDUType != types.PduTypeError {
+		t.Fatalf("responses = %+v, err = %v", responses, err)
+	}
+	if responses[0].ErrorClass != types.ErrorClassProperty || responses[0].ErrorCode != types.ErrorCodeWriteAccessDenied {
+		t.Fatalf("error class/code = %v/%v", responses[0].ErrorClass, responses[0].ErrorCode)
+	}
+
+	wpmError := &pdu.WritePropertyMultipleError{}
+	if err := wpmError.UnmarshalBinary(responses[0].Payload); err != nil {
+		t.Fatal(err)
+	}
+	if wpmError.Class != types.ErrorClassProperty || wpmError.Code != types.ErrorCodeWriteAccessDenied {
+		t.Fatalf("decoded error class/code = %v/%v", wpmError.Class, wpmError.Code)
+	}
+	wantObject := ObjectID{Type: uint16(wpmError.FirstFailed.ObjectId.Type), Instance: wpmError.FirstFailed.ObjectId.InstanceNumber()}
+	if wantObject != binaryID || wpmError.FirstFailed.ID != uint32(types.PropertyPresentValue) {
+		t.Fatalf("firstFailed = object %+v property %d, want object %+v property %d", wantObject, wpmError.FirstFailed.ID, binaryID, uint32(types.PropertyPresentValue))
+	}
+
+	// Atomicity: the first object's write must not have been applied.
+	analogValues, err := device.ReadProperty(analogID, uint32(types.PropertyPresentValue), nil)
+	if err != nil || len(analogValues) != 1 || analogValues[0].Value != float32(20.5) {
+		t.Fatalf("analog present-value = %+v, err = %v, want unchanged 20.5", analogValues, err)
+	}
+}
+
+func TestApplicationWritePropertyMultipleReservedPriority(t *testing.T) {
+	device, analogID, _ := writePropertyMultipleTestDevice(true)
+	application := NewApplication(device, RealClock{})
+
+	payload := []byte{
+		0x0c, 0x00, 0x80, 0x00, 0x01, // [0] objectIdentifier AV:1
+		0x1e,       // [1] opening
+		0x09, 0x55, //   [0] propertyIdentifier 85
+		0x2e,                         //   [2] opening
+		0x44, 0x41, 0xa8, 0x00, 0x00, //     Real 21.0
+		0x2f,       //   [2] closing
+		0x39, 0x06, //   [3] priority 6 (reserved)
+		0x1f, // [1] closing
+	}
+
+	request := bacnet.NewRequest()
+	defer request.Release()
+	request.Apdu.Payload = payload
+	responses, err := application.handleWritePropertyMultiple(context.Background(), &responder.Request{Packet: request})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(responses) != 1 || responses[0].PDUType != types.PduTypeError {
+		t.Fatalf("responses = %+v, err = %v", responses, err)
+	}
+	wantClass, wantCode := modelErrorClassCode(ErrReservedPriority)
+	if responses[0].ErrorClass != wantClass || responses[0].ErrorCode != wantCode {
+		t.Fatalf("error class/code = %v/%v, want %v/%v", responses[0].ErrorClass, responses[0].ErrorCode, wantClass, wantCode)
+	}
+
+	// Nothing was mutated: the command priority array remains empty and the
+	// property still reports its relinquish-default value.
+	values, err := device.ReadProperty(analogID, uint32(types.PropertyPresentValue), nil)
+	if err != nil || len(values) != 1 || values[0].Value != float32(20.5) {
+		t.Fatalf("present-value = %+v, err = %v, want unchanged relinquish-default 20.5", values, err)
+	}
+}
+
 func TestReadPropertyPriorityArrayOverWire(t *testing.T) {
 	objectID := ObjectID{Type: uint16(types.ObjectTypeAnalogValue), Instance: 1}
 	defaultValue := Value{Tag: types.TagReal, Value: float32(20.5)}

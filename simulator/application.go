@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/zyra/gobac/v2/bacnet/pdu"
 	"github.com/zyra/gobac/v2/bacnet/responder"
 	"github.com/zyra/gobac/v2/bacnet/transport"
 	"github.com/zyra/gobac/v2/bacnet/types"
@@ -36,6 +37,7 @@ func (a *Application) Register(server *responder.Server) {
 	server.Handle(types.PduTypeUnconfirmedServiceRequest, types.UnconfirmedServiceWhoIs, a.handleWhoIs)
 	server.Handle(types.PduTypeConfirmedServiceRequest, types.ConfirmedServiceReadProperty, a.handleReadProperty)
 	server.Handle(types.PduTypeConfirmedServiceRequest, types.ConfirmedServiceWriteProperty, a.handleWriteProperty)
+	server.Handle(types.PduTypeConfirmedServiceRequest, types.ConfirmedServiceWritePropertyMultiple, a.handleWritePropertyMultiple)
 	server.Handle(types.PduTypeConfirmedServiceRequest, types.ConfirmedServiceReadPropertyMultiple, a.handleReadPropertyMultiple)
 	server.Handle(types.PduTypeConfirmedServiceRequest, types.ConfirmedServiceSubscribeCov, a.handleSubscribeCOV)
 }
@@ -91,6 +93,88 @@ func (a *Application) handleWriteProperty(_ context.Context, request *responder.
 	responses := []responder.Response{responder.SimpleACK()}
 	responses = append(responses, a.notifications(object)...)
 	return responses, nil
+}
+
+// handleWritePropertyMultiple applies a WritePropertyMultiple-Request
+// atomically: every write is validated first, without mutating the device,
+// and only applied once every write in the request is known to succeed. On
+// the first validation failure the whole request is rejected with the
+// standard WritePropertyMultiple-Error production and nothing is mutated.
+func (a *Application) handleWritePropertyMultiple(_ context.Context, request *responder.Request) ([]responder.Response, error) {
+	specifications, err := decodeWritePropertyMultiple(request.Packet.Apdu.Payload)
+	if err != nil {
+		if err == errWritePriorityOutOfRange {
+			return []responder.Response{responder.Reject(types.RejectReasonParameterOutOfRange)}, nil
+		}
+		return []responder.Response{responder.Reject(types.RejectReasonInvalidTag)}, nil
+	}
+
+	for _, specification := range specifications {
+		for _, write := range specification.Properties {
+			if write.Reference.ArrayIndex != nil {
+				response, err := writePropertyMultipleError(types.ErrorClassProperty, types.ErrorCodeInvalidArrayIndex, specification.Object, write.Reference.ID, write.Reference.ArrayIndex)
+				if err != nil {
+					return nil, err
+				}
+				return []responder.Response{response}, nil
+			}
+			if err := a.Device.ValidateWrite(specification.Object, write.Reference.ID, write.Values, write.Priority); err != nil {
+				class, code := modelErrorClassCode(err)
+				response, encodeErr := writePropertyMultipleError(class, code, specification.Object, write.Reference.ID, nil)
+				if encodeErr != nil {
+					return nil, encodeErr
+				}
+				return []responder.Response{response}, nil
+			}
+		}
+	}
+
+	changed := make([]ObjectID, 0, len(specifications))
+	seen := make(map[ObjectID]bool, len(specifications))
+	for _, specification := range specifications {
+		for _, write := range specification.Properties {
+			if err := a.Device.WriteProperty(specification.Object, write.Reference.ID, write.Values, write.Priority); err != nil {
+				class, code := modelErrorClassCode(err)
+				response, encodeErr := writePropertyMultipleError(class, code, specification.Object, write.Reference.ID, nil)
+				if encodeErr != nil {
+					return nil, encodeErr
+				}
+				return []responder.Response{response}, nil
+			}
+		}
+		if !seen[specification.Object] {
+			seen[specification.Object] = true
+			changed = append(changed, specification.Object)
+		}
+	}
+
+	responses := []responder.Response{responder.SimpleACK()}
+	for _, object := range changed {
+		responses = append(responses, a.notifications(object)...)
+	}
+	return responses, nil
+}
+
+// writePropertyMultipleError builds the Error response carrying the
+// WritePropertyMultiple-Error production: the errorClass/errorCode pair, plus
+// a firstFailedWriteAttempt reference to the property that failed.
+func writePropertyMultipleError(class types.ErrorClass, code types.ErrorCode, object ObjectID, propertyID uint32, arrayIndex *uint32) (responder.Response, error) {
+	objectID, err := toBACnetObjectID(object)
+	if err != nil {
+		return responder.Response{}, err
+	}
+	wpmError := &pdu.WritePropertyMultipleError{Class: class, Code: code}
+	wpmError.FirstFailed.ObjectId = objectID
+	wpmError.FirstFailed.ID = propertyID
+	if arrayIndex != nil {
+		wpmError.FirstFailed.Index = *arrayIndex
+		wpmError.FirstFailed.HasIndex = true
+	}
+	payload, err := wpmError.MarshalBinary()
+	if err != nil {
+		return responder.Response{}, err
+	}
+	return responder.Response{PDUType: types.PduTypeError, ErrorClass: class, ErrorCode: code, Payload: payload}, nil
 }
 
 func (a *Application) handleReadPropertyMultiple(_ context.Context, request *responder.Request) ([]responder.Response, error) {
@@ -310,22 +394,32 @@ func expandPropertyReferences(device *Device, specification ReadAccessSpecificat
 }
 
 func modelError(err error) responder.Response {
+	class, code := modelErrorClassCode(err)
+	return responder.ErrorResponse(class, code)
+}
+
+// modelErrorClassCode maps a simulator model error to the standard BACnet
+// errorClass/errorCode pair it is reported as, for callers that need the
+// class and code directly rather than a wrapped Error response (e.g. the
+// WritePropertyMultiple-Error production, which embeds them alongside a
+// firstFailedWriteAttempt reference).
+func modelErrorClassCode(err error) (types.ErrorClass, types.ErrorCode) {
 	switch err {
 	case ErrUnknownObject:
-		return responder.ErrorResponse(types.ErrorClassObject, types.ErrorCodeUnknownObject)
+		return types.ErrorClassObject, types.ErrorCodeUnknownObject
 	case ErrUnknownProperty:
-		return responder.ErrorResponse(types.ErrorClassProperty, types.ErrorCodeUnknownProperty)
+		return types.ErrorClassProperty, types.ErrorCodeUnknownProperty
 	case ErrPropertyNotArray:
-		return responder.ErrorResponse(types.ErrorClassProperty, types.ErrorCodePropertyIsNotAnArray)
+		return types.ErrorClassProperty, types.ErrorCodePropertyIsNotAnArray
 	case ErrInvalidArrayIndex:
-		return responder.ErrorResponse(types.ErrorClassProperty, types.ErrorCodeInvalidArrayIndex)
+		return types.ErrorClassProperty, types.ErrorCodeInvalidArrayIndex
 	case ErrWriteDenied, ErrReservedPriority:
-		return responder.ErrorResponse(types.ErrorClassProperty, types.ErrorCodeWriteAccessDenied)
+		return types.ErrorClassProperty, types.ErrorCodeWriteAccessDenied
 	case ErrInvalidPriority, ErrValueOutOfRange:
-		return responder.ErrorResponse(types.ErrorClassProperty, types.ErrorCodeValueOutOfRange)
+		return types.ErrorClassProperty, types.ErrorCodeValueOutOfRange
 	case ErrInvalidDataType:
-		return responder.ErrorResponse(types.ErrorClassProperty, types.ErrorCodeInvalidDataType)
+		return types.ErrorClassProperty, types.ErrorCodeInvalidDataType
 	default:
-		return responder.ErrorResponse(types.ErrorClassServices, types.ErrorCodeServiceRequestDenied)
+		return types.ErrorClassServices, types.ErrorCodeServiceRequestDenied
 	}
 }

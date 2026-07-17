@@ -77,14 +77,28 @@ func (p *Property) Read(arrayIndex *uint32) ([]Value, error) {
 }
 
 func (p *Property) Write(values []Value, priority uint8) error {
+	resolvedPriority, err := p.validateWrite(values, priority)
+	if err != nil {
+		return err
+	}
+	p.apply(values, resolvedPriority)
+	return nil
+}
+
+// validateWrite runs every check Write performs, without mutating the
+// property, and returns the priority that apply should use. Callers that
+// need to validate a batch of writes before applying any of them (e.g.
+// WritePropertyMultiple) should call validateWrite for each write and only
+// call apply once every write in the batch has validated successfully.
+func (p *Property) validateWrite(values []Value, priority uint8) (uint8, error) {
 	if !p.Writable {
-		return ErrWriteDenied
+		return 0, ErrWriteDenied
 	}
 	if len(values) == 0 {
-		return errors.New("property value is required")
+		return 0, errors.New("property value is required")
 	}
 	if err := p.validateValues(values); err != nil {
-		return err
+		return 0, err
 	}
 
 	if p.RelinquishDefault != nil {
@@ -92,25 +106,34 @@ func (p *Property) Write(values []Value, priority uint8) error {
 			priority = PrioritySlots
 		}
 		if priority < 1 || priority > PrioritySlots {
-			return ErrInvalidPriority
+			return 0, ErrInvalidPriority
 		}
 		if priority == 6 {
-			return ErrReservedPriority
+			return 0, ErrReservedPriority
 		}
+		return priority, nil
+	}
+
+	if priority != 0 {
+		return 0, ErrInvalidPriority
+	}
+	return 0, nil
+}
+
+// apply performs the mutation validateWrite already approved. priority is
+// only meaningful when the property has a RelinquishDefault (a commandable
+// property), matching the resolved priority validateWrite returned.
+func (p *Property) apply(values []Value, priority uint8) {
+	if p.RelinquishDefault != nil {
 		if values[0].Tag == 0 || values[0].Value == nil {
 			p.priorities[priority-1] = nil
 		} else {
 			value := cloneValue(values[0])
 			p.priorities[priority-1] = &value
 		}
-		return nil
-	}
-
-	if priority != 0 {
-		return ErrInvalidPriority
+		return
 	}
 	p.Values = cloneValues(values)
-	return nil
 }
 
 func (p *Property) validateValues(values []Value) error {
@@ -220,6 +243,30 @@ func (d *Device) ReadProperty(id ObjectID, propertyID uint32, arrayIndex *uint32
 		return nil, ErrUnknownProperty
 	}
 	return property.Read(arrayIndex)
+}
+
+// ValidateWrite runs every check WriteProperty performs, without mutating the
+// device, so a caller (e.g. WritePropertyMultiple) can validate a batch of
+// writes across possibly-multiple objects and only apply them once every
+// write in the batch is known to succeed.
+func (d *Device) ValidateWrite(id ObjectID, propertyID uint32, values []Value, priority uint8) error {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	object := d.Objects[id]
+	if object == nil {
+		return ErrUnknownObject
+	}
+	property := object.Properties[propertyID]
+	if property == nil {
+		if propertyID == uint32(types.PropertyPriorityArray) {
+			if pv := object.Properties[uint32(types.PropertyPresentValue)]; pv != nil && pv.RelinquishDefault != nil {
+				return ErrWriteDenied
+			}
+		}
+		return ErrUnknownProperty
+	}
+	_, err := property.validateWrite(values, priority)
+	return err
 }
 
 func (d *Device) WriteProperty(id ObjectID, propertyID uint32, values []Value, priority uint8) error {
