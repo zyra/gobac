@@ -24,6 +24,8 @@ type AppShell struct {
 	Nav     *widget.List
 	Content *fyne.Container
 	Status  *widget.Label
+
+	selected int
 }
 
 // NewAppShell builds the application shell.
@@ -63,6 +65,7 @@ func updateNavItem(id widget.ListItemID, obj fyne.CanvasObject) {
 
 // selectView shows the content view at index id and hides all others.
 func (s *AppShell) selectView(id int) {
+	s.selected = id
 	for i, obj := range s.Content.Objects {
 		if i == id {
 			obj.Show()
@@ -70,6 +73,20 @@ func (s *AppShell) selectView(id int) {
 			obj.Hide()
 		}
 	}
+}
+
+// SetView replaces the content view at index id with obj, preserving
+// whichever view is currently selected (obj is shown if id is the
+// currently selected nav index, hidden otherwise). Used to swap a
+// placeholder view for a real one after construction.
+func (s *AppShell) SetView(id int, obj fyne.CanvasObject) {
+	if id == s.selected {
+		obj.Show()
+	} else {
+		obj.Hide()
+	}
+	s.Content.Objects[id] = obj
+	s.Content.Refresh()
 }
 
 // SetStatus updates the status bar text. Safe to call from any goroutine.
