@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"image"
 	"testing"
 	"time"
 
@@ -42,8 +43,20 @@ func TestSelectingNavIndexSwitchesVisibleContent(t *testing.T) {
 	defer w.Close()
 
 	shell := NewAppShell(a, w)
+	w.SetContent(shell)
+	w.Resize(fyne.NewSize(900, 600))
+
+	shell.Nav.Select(0)
+	first := w.Canvas().Capture()
 
 	shell.Nav.Select(2)
+	second := w.Canvas().Capture()
+
+	// Rendered assertion: what the driver actually paints must change when
+	// the nav selection changes, not just internal container state.
+	if imagesEqual(first, second) {
+		t.Fatal("canvas capture is unchanged after selecting a different nav row")
+	}
 
 	if got, want := visibleLabelText(t, shell.Content), "Scenario editor"; got != want {
 		t.Errorf("visible content = %q, want %q", got, want)
@@ -111,4 +124,22 @@ func visibleLabelText(t *testing.T, stack *fyne.Container) string {
 		t.Fatalf("expected exactly one visible child, got %d", count)
 	}
 	return found
+}
+
+// imagesEqual reports whether a and b have identical bounds and pixels.
+func imagesEqual(a, b image.Image) bool {
+	if a.Bounds() != b.Bounds() {
+		return false
+	}
+	bounds := a.Bounds()
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			ar, ag, ab, aa := a.At(x, y).RGBA()
+			br, bg, bb, ba := b.At(x, y).RGBA()
+			if ar != br || ag != bg || ab != bb || aa != ba {
+				return false
+			}
+		}
+	}
+	return true
 }

@@ -37,8 +37,16 @@ var sweepDurations = []string{"1s", "3s", "10s"}
 
 // DiscoveryView is the Discovery navigation entry: sweep controls plus a
 // live device table bound to a store.DeviceStore.
+//
+// DiscoveryView is a proper widget (widget.BaseWidget + CreateRenderer)
+// rather than an embedded *fyne.Container, for the same reason AppShell is
+// (see shell.go): a struct that only embeds *fyne.Container satisfies
+// fyne.CanvasObject by promotion, but the driver's render-tree walk
+// recognizes concrete *fyne.Container or fyne.Widget values, not types that
+// merely embed one — so its children would never be painted when placed
+// inside another container (e.g. AppShell.Content).
 type DiscoveryView struct {
-	*fyne.Container
+	widget.BaseWidget
 
 	sess    session.Session
 	devices *store.DeviceStore
@@ -57,6 +65,8 @@ type DiscoveryView struct {
 	OnSelect func(store.DeviceRow)
 
 	removeListener func()
+
+	root *fyne.Container
 
 	// sweepDone is a test-only synchronization seam: if non-nil when
 	// sweep() is invoked, it is closed once that sweep's background
@@ -108,12 +118,18 @@ func NewDiscoveryView(sess session.Session, devices *store.DeviceStore, shell *A
 		}
 	}
 
-	v.Container = container.NewBorder(toolbar, nil, nil, nil, v.table)
+	v.root = container.NewBorder(toolbar, nil, nil, nil, v.table)
+	v.ExtendBaseWidget(v)
 
 	v.removeListener = v.devices.AddListener(v.refresh)
 	v.refresh()
 
 	return v
+}
+
+// CreateRenderer implements fyne.Widget.
+func (v *DiscoveryView) CreateRenderer() fyne.WidgetRenderer {
+	return widget.NewSimpleRenderer(v.root)
 }
 
 // cellText renders the data cell at id from the cached snapshot.

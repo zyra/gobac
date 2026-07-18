@@ -18,13 +18,22 @@ var viewLabels = []string{"Discovery view", "Object browser", "Scenario editor",
 // AppShell is the top-level content for the GoBAC Workstation main window:
 // a left navigation list, a center content stack that switches per
 // selection, and a bottom status bar.
+//
+// AppShell is a proper widget (widget.BaseWidget + CreateRenderer) rather
+// than an embedded *fyne.Container. Embedding *fyne.Container only
+// satisfies fyne.CanvasObject by method promotion on the concrete type
+// *AppShell; the driver's software renderer recognizes *fyne.Container and
+// fyne.Widget by concrete type/interface, not by promotion, so a bare
+// embed renders nothing when handed to window.SetContent. Being a widget
+// with CreateRenderer makes that class of bug impossible here.
 type AppShell struct {
-	*fyne.Container
+	widget.BaseWidget
 
 	Nav     *widget.List
 	Content *fyne.Container
 	Status  *widget.Label
 
+	root     *fyne.Container
 	selected int
 }
 
@@ -52,9 +61,15 @@ func NewAppShell(a fyne.App, w fyne.Window) *AppShell {
 
 	statusBar := container.NewHBox(shell.Status)
 
-	shell.Container = container.NewBorder(nil, statusBar, shell.Nav, nil, shell.Content)
+	shell.root = container.NewBorder(nil, statusBar, shell.Nav, nil, shell.Content)
+	shell.ExtendBaseWidget(shell)
 
 	return shell
+}
+
+// CreateRenderer implements fyne.Widget.
+func (s *AppShell) CreateRenderer() fyne.WidgetRenderer {
+	return widget.NewSimpleRenderer(s.root)
 }
 
 // updateNavItem renders the navigation row at id into obj, an item created

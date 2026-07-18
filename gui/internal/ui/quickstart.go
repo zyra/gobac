@@ -33,8 +33,12 @@ var _ quickstartRunner = (*simrun.Runner)(nil)
 // in-process simulator run whose devices are injected into the shared
 // DeviceStore (Source "local-sim") so Discovery and the Object Browser can
 // exercise them over real loopback UDP.
+//
+// QuickstartView is a proper widget (widget.BaseWidget + CreateRenderer)
+// rather than an embedded *fyne.Container; see the identical note on
+// DiscoveryView in discovery.go.
 type QuickstartView struct {
-	*fyne.Container
+	widget.BaseWidget
 
 	devices *store.DeviceStore
 	shell   *AppShell
@@ -60,6 +64,8 @@ type QuickstartView struct {
 	// Production code leaves them nil.
 	startDone chan struct{}
 	stopDone  chan struct{}
+
+	root *fyne.Container
 }
 
 // NewQuickstartView builds the Quickstart view.
@@ -87,11 +93,17 @@ func NewQuickstartView(devices *store.DeviceStore, shell *AppShell) fyne.CanvasO
 		},
 	)
 
-	v.Container = container.NewBorder(
+	v.root = container.NewBorder(
 		container.NewVBox(description, toolbar), nil, nil, nil, v.list,
 	)
+	v.ExtendBaseWidget(v)
 
 	return v
+}
+
+// CreateRenderer implements fyne.Widget.
+func (v *QuickstartView) CreateRenderer() fyne.WidgetRenderer {
+	return widget.NewSimpleRenderer(v.root)
 }
 
 // defaultStartRunner decodes sc and starts it via simrun.Start, adapting

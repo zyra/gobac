@@ -54,8 +54,12 @@ func classifyObjectType(t string) string {
 // EditorView is the Simulator Editor navigation entry: toolbar (New, Open,
 // Save, Save As), a network form, and master-detail device/object editing
 // over a scenariodoc.Document, with live validation.
+//
+// EditorView is a proper widget (widget.BaseWidget + CreateRenderer) rather
+// than an embedded *fyne.Container; see the identical note on DiscoveryView
+// in discovery.go.
 type EditorView struct {
-	*fyne.Container
+	widget.BaseWidget
 
 	shell *AppShell
 	doc   *scenariodoc.Document
@@ -107,6 +111,8 @@ type EditorView struct {
 	objInitialPriorityEntry *widget.Entry
 	objNumberOfStatesEntry  *widget.Entry
 	objCovIncrementEntry    *widget.Entry
+
+	root *fyne.Container
 }
 
 // NewEditorView builds the Simulator Editor view, holding a
@@ -120,9 +126,15 @@ func NewEditorView(shell *AppShell) fyne.CanvasObject {
 		selectedObject: -1,
 	}
 	v.buildWidgets()
+	v.ExtendBaseWidget(v)
 	v.selectDevice(0)
 	v.revalidate()
 	return v
+}
+
+// CreateRenderer implements fyne.Widget.
+func (v *EditorView) CreateRenderer() fyne.WidgetRenderer {
+	return widget.NewSimpleRenderer(v.root)
 }
 
 // buildWidgets constructs every widget that lives for the view's whole
@@ -185,7 +197,7 @@ func (v *EditorView) buildWidgets() {
 	mainSplit := container.NewHSplit(listSplit, formSplit)
 
 	top := container.NewVBox(toolbar, v.titleLabel, networkForm)
-	v.Container = container.NewBorder(top, v.summaryLabel, nil, nil, mainSplit)
+	v.root = container.NewBorder(top, v.summaryLabel, nil, nil, mainSplit)
 }
 
 // ---- device list ----
