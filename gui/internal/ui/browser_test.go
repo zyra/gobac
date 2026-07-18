@@ -117,11 +117,19 @@ func newBrowserTestView(t *testing.T, fake *fakeBrowserSession) *BrowserView {
 	return view
 }
 
+// awaitBrowser waits for a BrowserView background goroutine to finish. The
+// timeout is deliberately generous: on slow CI runners (notably Windows
+// with -race) the goroutine's first tree.Refresh triggers Fyne's initial
+// font parsing and text shaping, which alone can exceed a small timeout.
+// Timing out doesn't just fail the test — it leaks the goroutine
+// mid-shaping, which then races with the next test's rendering on Fyne's
+// process-global text shaper. A passing wait returns as soon as done
+// closes, so the large value costs nothing in the common case.
 func awaitBrowser(t *testing.T, done chan struct{}) {
 	t.Helper()
 	select {
 	case <-done:
-	case <-time.After(2 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatal("background goroutine did not complete within timeout")
 	}
 }

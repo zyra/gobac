@@ -66,7 +66,9 @@ func awaitQuickstart(t *testing.T, done chan struct{}) {
 	t.Helper()
 	select {
 	case <-done:
-	case <-time.After(2 * time.Second):
+	case <-time.After(30 * time.Second):
+		// Generous for slow CI runners (see awaitBrowser in
+		// browser_test.go); a passing wait returns immediately.
 		t.Fatal("quickstart operation did not complete within timeout")
 	}
 }

@@ -74,11 +74,13 @@ func TestSetStatusUpdatesStatusLabel(t *testing.T) {
 	}()
 	select {
 	case <-done:
-	case <-time.After(2 * time.Second):
+	case <-time.After(30 * time.Second):
+		// Generous for slow CI runners (see awaitBrowser in
+		// browser_test.go); a passing wait returns immediately.
 		t.Fatal("SetStatus did not return within timeout")
 	}
 
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 	for shell.Status.Text != "ready" && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
