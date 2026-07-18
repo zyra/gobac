@@ -2,7 +2,9 @@ package boot
 
 import (
 	"context"
+	"errors"
 	"image"
+	"strings"
 	"testing"
 	"time"
 
@@ -10,6 +12,7 @@ import (
 	"fyne.io/fyne/v2/test"
 
 	"github.com/zyra/gobac/gui/internal/session"
+	"github.com/zyra/gobac/gui/internal/ui"
 )
 
 // fakeSession is a minimal session.Session whose Start succeeds without
@@ -38,6 +41,63 @@ func (fakeSession) ReadMultiple(ctx context.Context, dev session.Address, specs 
 
 func (fakeSession) Write(ctx context.Context, dev session.Address, obj session.ObjectRef, w session.WriteRequest) error {
 	return nil
+}
+
+// failingSession is a session.Session whose Start always fails, so
+// Compose's failure-path status wording can be exercised without touching
+// any socket.
+type failingSession struct{ fakeSession }
+
+func (failingSession) Start(session.Config) error { return errors.New("bind failed") }
+
+// awaitStatus polls shell's rendered status label until it is non-empty or
+// the deadline passes, then returns its text. SetStatus dispatches via
+// fyne.Do, so a freshly-composed shell's status may not be set yet on the
+// calling goroutine.
+func awaitStatus(t *testing.T, shell *ui.AppShell) string {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if s := shell.Status.Text; s != "" {
+			return s
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("status bar text was never set")
+	return ""
+}
+
+// TestComposeReportsConnectedStatusOnSuccessfulStart exercises the plain
+// success wording Compose's startup path (and, by the same helper, a
+// Settings restart) reports in the rendered status bar.
+func TestComposeReportsConnectedStatusOnSuccessfulStart(t *testing.T) {
+	a := test.NewApp()
+	w := a.NewWindow("t")
+	defer w.Close()
+
+	shell := Compose(a, w, fakeSession{})
+
+	got := awaitStatus(t, shell)
+	if !strings.HasPrefix(got, "Connected on ") || !strings.Contains(got, "(port ") {
+		t.Errorf("status = %q, want prefix %q and a port", got, "Connected on ")
+	}
+}
+
+// TestComposeReportsFailureStatusWhenStartFails exercises the plain
+// failure wording when the session fails to start; launch must still
+// continue (Compose returns a usable shell) since other views don't depend
+// on a running session.
+func TestComposeReportsFailureStatusWhenStartFails(t *testing.T) {
+	a := test.NewApp()
+	w := a.NewWindow("t")
+	defer w.Close()
+
+	shell := Compose(a, w, failingSession{})
+
+	got := awaitStatus(t, shell)
+	if !strings.HasPrefix(got, "Couldn't start on ") || !strings.Contains(got, "bind failed") {
+		t.Errorf("status = %q, want prefix %q containing %q", got, "Couldn't start on ", "bind failed")
+	}
 }
 
 // TestComposedWindowRendersNonBlank exercises the exact composition main()

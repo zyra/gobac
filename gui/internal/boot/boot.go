@@ -6,9 +6,11 @@ package boot
 
 import (
 	"fmt"
+	"net"
 
 	"fyne.io/fyne/v2"
 
+	"github.com/zyra/gobac/gui/internal/netpick"
 	"github.com/zyra/gobac/gui/internal/session"
 	"github.com/zyra/gobac/gui/internal/store"
 	"github.com/zyra/gobac/gui/internal/ui"
@@ -31,17 +33,20 @@ const (
 // (and tests) can drive it further.
 func Compose(a fyne.App, w fyne.Window, sess session.Session) *ui.AppShell {
 	w.Resize(fyne.NewSize(1100, 700))
-	w.SetMainMenu(ui.NewMainMenu(a, w))
 
 	shell := ui.NewAppShell(a, w)
 
-	settings := ui.LoadSettings(a)
-	if err := session.StartFromSettings(sess, settings.Interface, settings.Port); err != nil {
-		// Non-fatal: the simulator quickstart and scenario editor don't
-		// need a running session, so launch continues and the failure is
-		// surfaced in the status bar instead of aborting.
-		shell.SetStatus(fmt.Sprintf("Session not started: %v", err))
+	restart := func(s ui.Settings) {
+		_ = session.Shutdown(sess)
+		startSession(sess, shell, s)
 	}
+	w.SetMainMenu(ui.NewMainMenu(a, w, restart))
+
+	// Startup goes through the same startSession helper Settings' Restart
+	// callback uses, so first launch and a live network change report
+	// identically in the status bar.
+	startSession(sess, shell, ui.LoadSettings(a))
+
 	w.SetCloseIntercept(func() {
 		_ = session.Shutdown(sess)
 		w.Close()
@@ -74,4 +79,40 @@ func Compose(a fyne.App, w fyne.Window, sess session.Session) *ui.AppShell {
 	w.SetContent(shell)
 
 	return shell
+}
+
+// startSession starts sess using s and reports the outcome in shell's
+// status bar with plain, human-readable wording naming the resolved
+// network's label (not a raw interface name). A failure is non-fatal: the
+// simulator quickstart and scenario editor don't need a running session,
+// so callers keep going with just the status bar reflecting what happened.
+func startSession(sess session.Session, shell *ui.AppShell, s ui.Settings) {
+	label := interfaceLabel(s.Interface)
+	if err := session.StartFromSettings(sess, s.Interface, s.Port); err != nil {
+		shell.SetStatus(fmt.Sprintf("Couldn't start on %s: %v", label, err))
+		return
+	}
+	shell.SetStatus(fmt.Sprintf("Connected on %s (port %d)", label, s.Port))
+}
+
+// interfaceLabel returns the human-friendly netpick label for iface (a
+// Settings.Interface value): the Automatic pick's label when iface is
+// empty, or the matching candidate's label for a named interface. It falls
+// back to "Automatic" or the raw name when netpick has nothing to say
+// (e.g. no usable interface, or one that has since disappeared) so the
+// status bar always has something plain to show.
+func interfaceLabel(iface string) string {
+	cands := netpick.Candidates(net.Interfaces)
+	if iface == "" {
+		if c, ok := netpick.Automatic(cands); ok {
+			return c.Label
+		}
+		return "Automatic"
+	}
+	for _, c := range cands {
+		if c.Name == iface {
+			return c.Label
+		}
+	}
+	return iface
 }

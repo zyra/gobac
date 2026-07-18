@@ -3,6 +3,8 @@ package session
 import (
 	"errors"
 	"testing"
+
+	"github.com/zyra/gobac/gui/internal/netpick"
 )
 
 // fakeStarter is a minimal Starter fake recording Start/Stop calls without
@@ -59,6 +61,63 @@ func TestStartFromSettingsPropagatesError(t *testing.T) {
 
 	if !errors.Is(err, wantErr) {
 		t.Errorf("StartFromSettings error = %v, want %v", err, wantErr)
+	}
+}
+
+// withResolveAutomatic temporarily replaces the resolveAutomatic seam,
+// restoring the original on cleanup.
+func withResolveAutomatic(t *testing.T, fn func() (netpick.Candidate, bool)) {
+	t.Helper()
+	orig := resolveAutomatic
+	resolveAutomatic = fn
+	t.Cleanup(func() { resolveAutomatic = orig })
+}
+
+func TestStartFromSettingsResolvesEmptyInterfaceToAutomaticPick(t *testing.T) {
+	withResolveAutomatic(t, func() (netpick.Candidate, bool) {
+		return netpick.Candidate{Name: "fake0"}, true
+	})
+	f := &fakeStarter{}
+
+	if err := StartFromSettings(f, "", 47808); err != nil {
+		t.Fatalf("StartFromSettings: %v", err)
+	}
+
+	want := Config{Interface: "fake0", Port: 47808, LocalPort: 47808}
+	if f.startCfg != want {
+		t.Errorf("Start called with %+v, want %+v", f.startCfg, want)
+	}
+}
+
+func TestStartFromSettingsErrorsWhenNoCandidates(t *testing.T) {
+	withResolveAutomatic(t, func() (netpick.Candidate, bool) {
+		return netpick.Candidate{}, false
+	})
+	f := &fakeStarter{}
+
+	err := StartFromSettings(f, "", 47808)
+	if err == nil || err.Error() != "no usable network found" {
+		t.Fatalf("StartFromSettings error = %v, want %q", err, "no usable network found")
+	}
+	if f.startCalls != 0 {
+		t.Errorf("Start called %d times, want 0", f.startCalls)
+	}
+}
+
+func TestStartFromSettingsPassesExplicitInterfaceUnchanged(t *testing.T) {
+	withResolveAutomatic(t, func() (netpick.Candidate, bool) {
+		t.Fatal("resolveAutomatic called for an explicit interface")
+		return netpick.Candidate{}, false
+	})
+	f := &fakeStarter{}
+
+	if err := StartFromSettings(f, "eno0", 47808); err != nil {
+		t.Fatalf("StartFromSettings: %v", err)
+	}
+
+	want := Config{Interface: "eno0", Port: 47808, LocalPort: 47808}
+	if f.startCfg != want {
+		t.Errorf("Start called with %+v, want %+v", f.startCfg, want)
 	}
 }
 
