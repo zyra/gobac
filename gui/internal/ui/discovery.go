@@ -40,6 +40,11 @@ var sourceText = map[string]string{
 // defaultSweepDuration is the pre-selected entry in the duration selector.
 const defaultSweepDuration = "3s"
 
+// emptyTablePlaceholder is the plain-language text shown in place of the
+// device table before any device has been found (task U4: never a blank
+// pane as the first thing on screen).
+const emptyTablePlaceholder = "No devices yet — click Scan network, or run the Simulator."
+
 // sweepDurations are the selectable Who-Is sweep durations, in display
 // order. Every entry must parse with time.ParseDuration.
 var sweepDurations = []string{"1s", "3s", "10s"}
@@ -61,11 +66,12 @@ type DiscoveryView struct {
 	devices *store.DeviceStore
 	shell   *AppShell
 
-	sweepBtn *widget.Button
-	clearBtn *widget.Button
-	duration *widget.Select
-	count    *widget.Label
-	table    *widget.Table
+	sweepBtn    *widget.Button
+	clearBtn    *widget.Button
+	duration    *widget.Select
+	count       *widget.Label
+	table       *widget.Table
+	placeholder *widget.Label
 
 	cached []store.DeviceRow
 
@@ -101,8 +107,9 @@ func NewDiscoveryView(sess session.Session, devices *store.DeviceStore, shell *A
 	v.duration = widget.NewSelect(sweepDurations, nil)
 	v.duration.SetSelected(defaultSweepDuration)
 
-	v.sweepBtn = widget.NewButton("Sweep", v.sweep)
+	v.sweepBtn = widget.NewButton("Scan network", v.sweep)
 	v.clearBtn = widget.NewButton("Clear", v.clear)
+	v.placeholder = widget.NewLabel(emptyTablePlaceholder)
 
 	toolbar := container.NewHBox(v.sweepBtn, v.duration, v.clearBtn, v.count)
 
@@ -127,7 +134,7 @@ func NewDiscoveryView(sess session.Session, devices *store.DeviceStore, shell *A
 		}
 	}
 
-	v.root = container.NewBorder(toolbar, nil, nil, nil, v.table)
+	v.root = container.NewBorder(toolbar, nil, nil, nil, container.NewStack(v.table, v.placeholder))
 	v.ExtendBaseWidget(v)
 
 	v.removeListener = v.devices.AddListener(v.refresh)
@@ -179,8 +186,18 @@ func (v *DiscoveryView) cellText(id widget.TableCellID) string {
 func (v *DiscoveryView) refresh() {
 	fyne.Do(func() {
 		v.cached = v.devices.Snapshot()
+		empty := len(v.cached) == 0
+		// Hide the column header while empty: it has nothing to label, and
+		// leaving it shown would visually collide with the centered
+		// placeholder text overlaid in the same area.
+		v.table.ShowHeaderRow = !empty
 		v.table.Refresh()
 		v.count.SetText(fmt.Sprintf("%d devices", len(v.cached)))
+		if empty {
+			v.placeholder.Show()
+		} else {
+			v.placeholder.Hide()
+		}
 	})
 }
 
@@ -188,6 +205,14 @@ func (v *DiscoveryView) refresh() {
 // refresh.
 func (v *DiscoveryView) clear() {
 	v.devices.Clear()
+}
+
+// Sweep runs a Who-Is sweep exactly as if the user had tapped "Scan
+// network". Exported so callers outside this package — namely Home's
+// "Discover my network" button, wired in boot.Compose — can trigger a scan
+// without reaching into an unexported method.
+func (v *DiscoveryView) Sweep() {
+	v.sweep()
 }
 
 // sweep runs a Who-Is sweep for the selected duration on a goroutine,

@@ -17,7 +17,7 @@ func TestNewAppShellNavigationHasThreeLabeledItems(t *testing.T) {
 
 	shell := NewAppShell(a, w)
 
-	want := []string{"Discovery", "Object Browser", "Simulator"}
+	want := []string{"Home", "Network Explorer", "Simulator"}
 
 	if got := len(navLabels); got != len(want) {
 		t.Fatalf("len(navLabels) = %d, want %d", got, len(want))
@@ -70,6 +70,32 @@ func TestSelectingNavIndexSwitchesVisibleContent(t *testing.T) {
 	}
 	if visibleCount != 1 {
 		t.Errorf("visible child count = %d, want 1", visibleCount)
+	}
+}
+
+// TestSelectSwitchesContentLikeNavSelect exercises the AppShell.Select
+// convenience callers outside this package use (Home's primary action
+// buttons) — it must produce the exact same rendered result as driving
+// Nav.Select directly, since it is only a thin wrapper.
+func TestSelectSwitchesContentLikeNavSelect(t *testing.T) {
+	a := test.NewApp()
+	w := a.NewWindow("test")
+	defer w.Close()
+
+	shell := NewAppShell(a, w)
+	w.SetContent(shell)
+	w.Resize(fyne.NewSize(900, 600))
+
+	before := w.Canvas().Capture()
+
+	shell.Select(2)
+	after := w.Canvas().Capture()
+
+	if imagesEqual(before, after) {
+		t.Fatal("canvas capture is unchanged after Select to a different nav row")
+	}
+	if got, want := visibleLabelText(t, shell.Content), "Simulator"; got != want {
+		t.Errorf("visible content after Select(2) = %q, want %q", got, want)
 	}
 }
 

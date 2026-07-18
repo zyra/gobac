@@ -10,6 +10,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/widget"
 
 	"github.com/zyra/gobac/gui/internal/session"
 	"github.com/zyra/gobac/gui/internal/ui"
@@ -50,15 +51,17 @@ type failingSession struct{ fakeSession }
 
 func (failingSession) Start(session.Config) error { return errors.New("bind failed") }
 
-// awaitStatus polls shell's rendered status label until it is non-empty or
-// the deadline passes, then returns its text. SetStatus dispatches via
-// fyne.Do, so a freshly-composed shell's status may not be set yet on the
-// calling goroutine.
+// awaitStatus polls shell's rendered status label until it differs from
+// both "" and the shell's "Ready" launch default, or the deadline passes,
+// then returns its text. SetStatus dispatches via fyne.Do, so a
+// freshly-composed shell's status may not reflect startLaunch's outcome yet
+// on the calling goroutine — it may still read the constructor's "Ready"
+// placeholder.
 func awaitStatus(t *testing.T, shell *ui.AppShell) string {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if s := shell.Status.Text; s != "" {
+		if s := shell.Status.Text; s != "" && s != "Ready" {
 			return s
 		}
 		time.Sleep(time.Millisecond)
@@ -83,10 +86,11 @@ func TestComposeReportsConnectedStatusOnSuccessfulStart(t *testing.T) {
 	}
 }
 
-// TestComposeReportsFailureStatusWhenStartFails exercises the plain
-// failure wording when the session fails to start; launch must still
-// continue (Compose returns a usable shell) since other views don't depend
-// on a running session.
+// TestComposeReportsFailureStatusWhenStartFails exercises the plain,
+// first-run-safe failure wording (task U4) when the session fails to start
+// at launch — never a raw error as the first thing on screen — and that
+// launch still continues (Compose returns a usable shell, Home still
+// renders) since other views don't depend on a running session.
 func TestComposeReportsFailureStatusWhenStartFails(t *testing.T) {
 	a := test.NewApp()
 	w := a.NewWindow("t")
@@ -95,8 +99,9 @@ func TestComposeReportsFailureStatusWhenStartFails(t *testing.T) {
 	shell := Compose(a, w, failingSession{})
 
 	got := awaitStatus(t, shell)
-	if !strings.HasPrefix(got, "Couldn't start on ") || !strings.Contains(got, "bind failed") {
-		t.Errorf("status = %q, want prefix %q containing %q", got, "Couldn't start on ", "bind failed")
+	want := "Not connected yet — check Settings"
+	if got != want {
+		t.Errorf("status = %q, want %q", got, want)
 	}
 }
 
@@ -205,6 +210,143 @@ func TestComposedWindowShowsNavAndStatus(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("shell's rendered object tree does not include the nav list")
+	}
+}
+
+// findButton returns the first *widget.Button in obj's tree whose Text
+// matches label, failing the test if none is found.
+func findButton(t *testing.T, obj fyne.CanvasObject, label string) *widget.Button {
+	t.Helper()
+	var found *widget.Button
+	var walk func(fyne.CanvasObject)
+	walk = func(o fyne.CanvasObject) {
+		if found != nil {
+			return
+		}
+		if btn, ok := o.(*widget.Button); ok && btn.Text == label {
+			found = btn
+			return
+		}
+		if c, ok := o.(*fyne.Container); ok {
+			for _, child := range c.Objects {
+				walk(child)
+			}
+		}
+	}
+	walk(obj)
+	if found == nil {
+		t.Fatalf("no *widget.Button with text %q found in rendered tree", label)
+	}
+	return found
+}
+
+// TestComposedWindowLaunchesWithHomeSelected covers task U4: the app must
+// launch on the Home view, and Home must actually be the *selected* nav
+// row (not merely the default content shown), so re-selecting it is a
+// no-op that changes nothing on screen, while selecting either other row
+// changes what's painted.
+func TestComposedWindowLaunchesWithHomeSelected(t *testing.T) {
+	a := test.NewApp()
+	w := a.NewWindow("t")
+	defer w.Close()
+
+	shell := Compose(a, w, fakeSession{})
+	w.Resize(fyne.NewSize(1100, 700))
+
+	launch := w.Canvas().Capture()
+
+	shell.Select(homeNavIndex)
+	afterReselect := w.Canvas().Capture()
+	if !imagesEqual(launch, afterReselect) {
+		t.Fatal("re-selecting Home changed the rendered canvas: Home was not already the selected nav row at launch")
+	}
+
+	shell.Select(explorerNavIndex)
+	if imagesEqual(launch, w.Canvas().Capture()) {
+		t.Fatal("launch capture is identical to the Network Explorer capture")
+	}
+
+	shell.Select(homeNavIndex)
+	shell.Select(simulatorNavIndex)
+	if imagesEqual(launch, w.Canvas().Capture()) {
+		t.Fatal("launch capture is identical to the Simulator capture")
+	}
+}
+
+// TestHomeSimulateButtonNavigatesToSimulator covers task U4: tapping
+// Home's "Simulate a network" button must render exactly what selecting
+// the Simulator nav row directly renders.
+func TestHomeSimulateButtonNavigatesToSimulator(t *testing.T) {
+	a := test.NewApp()
+	w := a.NewWindow("t")
+	defer w.Close()
+
+	shell := Compose(a, w, fakeSession{})
+	w.Resize(fyne.NewSize(1100, 700))
+
+	homeContent := shell.Content.Objects[homeNavIndex]
+	test.Tap(findButton(t, homeContent, "Simulate a network"))
+	afterTap := w.Canvas().Capture()
+
+	shell.Select(homeNavIndex)
+	shell.Select(simulatorNavIndex)
+	viaNav := w.Canvas().Capture()
+
+	if !imagesEqual(afterTap, viaNav) {
+		t.Fatal("tapping Simulate a network did not render the same as selecting the Simulator nav row directly")
+	}
+}
+
+// discoverySpySession wraps fakeSession, overriding Discover to close
+// called the moment it is invoked. Discover runs on the Discovery view's
+// own background sweep goroutine (see DiscoveryView.sweep), so a plain poll
+// of shared state from the test goroutine would race with it; a channel
+// close/receive is a genuine synchronization point regardless of which
+// goroutine performs the close, so waiting on it is race-free evidence the
+// seam fired without needing to wait for the goroutine's later, unrelated
+// work (re-enabling the sweep button, setting the final status).
+type discoverySpySession struct {
+	fakeSession
+	called chan struct{}
+}
+
+func (s *discoverySpySession) Discover(ctx context.Context, timeout time.Duration) (<-chan session.DeviceSummary, error) {
+	close(s.called)
+	ch := make(chan session.DeviceSummary)
+	close(ch)
+	return ch, nil
+}
+
+// TestHomeDiscoverButtonNavigatesToExplorerAndTriggersSweep covers task U4:
+// tapping Home's "Discover my network" button must switch the visible
+// content to the Network Explorer nav row and must actually trigger a scan.
+// Home's wiring selects Network Explorer before calling Sweep, and that
+// selection is entirely synchronous, so asserting on Show()/Hide() state
+// immediately after the tap is safe — nothing concurrent touches it.
+func TestHomeDiscoverButtonNavigatesToExplorerAndTriggersSweep(t *testing.T) {
+	fake := &discoverySpySession{called: make(chan struct{})}
+
+	a := test.NewApp()
+	w := a.NewWindow("t")
+	defer w.Close()
+
+	shell := Compose(a, w, fake)
+	w.Resize(fyne.NewSize(1100, 700))
+
+	homeContent := shell.Content.Objects[homeNavIndex]
+	test.Tap(findButton(t, homeContent, "Discover my network"))
+
+	select {
+	case <-fake.called:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Discover was never called — the sweep seam did not fire")
+	}
+
+	if !shell.Content.Objects[explorerNavIndex].Visible() {
+		t.Error("Network Explorer content should be visible after tapping Discover my network")
+	}
+	if shell.Content.Objects[homeNavIndex].Visible() {
+		t.Error("Home content should be hidden after tapping Discover my network")
 	}
 }
 

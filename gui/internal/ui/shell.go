@@ -8,14 +8,16 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-// navLabels are the left-navigation entries, in display order. Task U3
-// folded the former Quickstart view into the Simulator (Simulator Editor)
-// view, leaving three entries.
-var navLabels = []string{"Discovery", "Object Browser", "Simulator"}
+// navLabels are the left-navigation entries, in display order. Task U4 adds
+// a welcoming Home entry and renames Discovery to the plain-language
+// "Network Explorer" (see the UX vision in the gui-ux-rework plan); Object
+// Browser is no longer a top-level destination — viewing a device's objects
+// is a drill-down of Network Explorer, wired in boot.Compose.
+var navLabels = []string{"Home", "Network Explorer", "Simulator"}
 
 // viewLabels are the placeholder center-content texts, one per navLabels
 // entry at the same index.
-var viewLabels = []string{"Discovery view", "Object browser", "Simulator"}
+var viewLabels = []string{"Home view", "Network Explorer view", "Simulator"}
 
 // AppShell is the top-level content for the GoBAC Workstation main window:
 // a left navigation list, a center content stack that switches per
@@ -42,7 +44,7 @@ type AppShell struct {
 // NewAppShell builds the application shell.
 func NewAppShell(a fyne.App, w fyne.Window) *AppShell {
 	shell := &AppShell{
-		Status: widget.NewLabel(""),
+		Status: widget.NewLabel("Ready"),
 	}
 
 	views := make([]fyne.CanvasObject, len(viewLabels))
@@ -104,6 +106,15 @@ func (s *AppShell) SetView(id int, obj fyne.CanvasObject) {
 	}
 	s.Content.Objects[id] = obj
 	s.Content.Refresh()
+}
+
+// Select switches the visible content to the nav row at id, exactly as if
+// the user had clicked that row (it fires Nav.OnSelected, which drives
+// selectView). Exported so callers outside this package — namely Home's
+// primary action buttons, wired in boot.Compose — can navigate without
+// reaching into Nav directly.
+func (s *AppShell) Select(id int) {
+	s.Nav.Select(id)
 }
 
 // SetStatus updates the status bar text. Safe to call from any goroutine.

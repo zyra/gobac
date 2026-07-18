@@ -214,6 +214,55 @@ func TestSweepButtonDisabledWhileRunningAndReenabledAfter(t *testing.T) {
 	}
 }
 
+// TestEmptyTablePlaceholderShowsThenHidesAfterFirstDevice covers the U4
+// blank-pane fix: before any device is known, the placeholder's exact plain
+// wording is rendered instead of a blank table; it disappears the moment
+// the store gains its first row.
+func TestEmptyTablePlaceholderShowsThenHidesAfterFirstDevice(t *testing.T) {
+	fake := &fakeDiscoverSession{}
+	view, devices := newDiscoveryTestView(t, fake)
+
+	if !view.placeholder.Visible() {
+		t.Fatal("placeholder should be visible before any device is known")
+	}
+	if got, want := view.placeholder.Text, emptyTablePlaceholder; got != want {
+		t.Errorf("placeholder text = %q, want %q", got, want)
+	}
+
+	devices.Upsert(store.DeviceRow{
+		Key:    store.DeviceKey{Instance: 1, IP: "192.0.2.1"},
+		Source: "network",
+	})
+
+	if view.placeholder.Visible() {
+		t.Error("placeholder should be hidden once a device row exists")
+	}
+
+	devices.Clear()
+
+	if !view.placeholder.Visible() {
+		t.Error("placeholder should reappear once the table is cleared back to empty")
+	}
+}
+
+// TestSweepExportedMethodMatchesButtonTap covers the U4 seam boot.Compose
+// wires Home's "Discover my network" button through: the exported Sweep
+// method must behave identically to tapping the rendered button (button
+// disabled while running, device rows populated after).
+func TestSweepExportedMethodMatchesButtonTap(t *testing.T) {
+	fake := &fakeDiscoverSession{ch: closedChannelOf(twoTestSummaries())}
+	view, _ := newDiscoveryTestView(t, fake)
+	view.sweepDone = make(chan struct{})
+
+	view.Sweep()
+	awaitSweep(t, view.sweepDone)
+
+	rows, _ := view.table.Length()
+	if rows != 2 {
+		t.Fatalf("table rows after Sweep() = %d, want 2", rows)
+	}
+}
+
 func TestSelectingRowInvokesOnSelectWithExactRow(t *testing.T) {
 	fake := &fakeDiscoverSession{}
 	view, devices := newDiscoveryTestView(t, fake)
