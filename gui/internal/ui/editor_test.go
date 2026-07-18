@@ -3,6 +3,7 @@ package ui
 import (
 	"bytes"
 	"context"
+	"image"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -334,6 +335,55 @@ func TestRunPopulatesDeviceStoreAndRunningStrip(t *testing.T) {
 	}
 }
 
+// TestRunMakesRunningStripVisibleOnCanvas mounts the editor view into a real
+// window/canvas (unlike TestRunPopulatesDeviceStoreAndRunningStrip, which
+// only inspects Visible()/Objects without ever rendering) and asserts the
+// running-devices strip actually occupies rendered space and paints content
+// once a simulation starts. This is the regression test for the
+// v.root.Refresh() fix in onRun/onStop: runningStrip.Show() alone leaves the
+// Border layout's bottom region sized from when the strip was hidden
+// (zero), so without re-running that layout the strip would report
+// Visible() == true while remaining invisibly clipped to zero size — a
+// capture-only test catches that; a Visible()/Objects-only test does not.
+func TestRunMakesRunningStripVisibleOnCanvas(t *testing.T) {
+	view, _ := newEditorTestView(t)
+	fake := newFakeSimRunner()
+	view.StartRunner = func(ctx context.Context, sc *simulator.Scenario) (simRunner, error) {
+		return fake, nil
+	}
+	view.startDone = make(chan struct{})
+
+	a := test.NewApp()
+	w := a.NewWindow("capture")
+	defer w.Close()
+	w.SetContent(view)
+	w.Resize(fyne.NewSize(900, 700))
+
+	before := w.Canvas().Capture()
+
+	test.Tap(view.runBtn)
+	awaitEditor(t, view.startDone)
+
+	after := w.Canvas().Capture()
+	if imagesEqual(before, after) {
+		t.Fatal("canvas capture is unchanged after Run; running-devices strip never became visible")
+	}
+
+	stripSize := view.runningStrip.Size()
+	if stripSize.Width <= 0 || stripSize.Height <= 0 {
+		t.Fatalf("runningStrip.Size() = %v, want > 0 in both dimensions (strip must occupy real layout space once visible, not just report Visible() == true)", stripSize)
+	}
+
+	stripPos := view.runningStrip.Position()
+	region := image.Rect(
+		int(stripPos.X), int(stripPos.Y),
+		int(stripPos.X+stripSize.Width), int(stripPos.Y+stripSize.Height),
+	)
+	if got := distinctColorsInRegion(after, region); got <= 1 {
+		t.Fatalf("running-devices strip region has %d distinct color(s), want > 1 (region should render device rows, not blank/clipped content)", got)
+	}
+}
+
 // TestRunAppendsPortHintToStatus covers the boot.go-wired PortHint seam: a
 // non-empty return value is appended to the running-status text, and the
 // callback receives every running device's port.
@@ -478,4 +528,18 @@ func TestLoadExampleScenarioReplacesDeviceList(t *testing.T) {
 	if got, want := view.summaryLabel.Text, "valid"; got != want {
 		t.Errorf("summaryLabel.Text = %q, want %q", got, want)
 	}
+}
+
+// distinctColorsInRegion returns the number of distinct pixel colors within
+// the intersection of img's bounds and region.
+func distinctColorsInRegion(img image.Image, region image.Rectangle) int {
+	b := img.Bounds().Intersect(region)
+	seen := make(map[[4]uint32]struct{})
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			r, g, bch, aCh := img.At(x, y).RGBA()
+			seen[[4]uint32{r, g, bch, aCh}] = struct{}{}
+		}
+	}
+	return len(seen)
 }
