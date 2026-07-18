@@ -13,7 +13,25 @@ type networkSet struct {
 	BroadcastIPv4 net.IP
 }
 
+// getNetworkSet resolves ifname to the source/broadcast IPv4 pair a Server
+// binds and sends from. An empty ifname is an explicit wildcard request
+// ("all networks"): it returns the wildcard source (net.IPv4zero, i.e.
+// 0.0.0.0) paired with the limited broadcast address (net.IPv4bcast, i.e.
+// 255.255.255.255) instead of failing, so callers such as Who-Is reach the
+// local segment of whichever interface the OS routes the broadcast through.
+// This is not equivalent to a per-interface directed broadcast on
+// multi-homed hosts -- some stacks only emit a limited broadcast on the
+// default route -- so it is best-effort rather than a guarantee of reaching
+// every attached network. Every other ifname behaves exactly as before.
 func getNetworkSet(ifname string) (*networkSet, error) {
+	if ifname == "" {
+		return &networkSet{
+			InterfaceName: ifname,
+			IPv4:          net.IPv4zero,
+			BroadcastIPv4: net.IPv4bcast,
+		}, nil
+	}
+
 	iface, err := net.InterfaceByName(ifname)
 
 	if err != nil {
