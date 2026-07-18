@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
 
@@ -147,7 +148,7 @@ func TestSweepPopulatesTableWithExactCellText(t *testing.T) {
 		t.Fatalf("table cols = %d, want %d", cols, len(discoveryColumns))
 	}
 
-	want := []string{"70001", "192.0.2.10:47808", "260", "1476", "none", "network", "15:04:05"}
+	want := []string{"70001", "", "192.0.2.10:47808", "260", "1476", "none", "Network", "15:04:05"}
 	for col, wantText := range want {
 		if got := cellText(view, 0, col); got != wantText {
 			t.Errorf("row 0 col %d (%s) = %q, want %q", col, discoveryColumns[col], got, wantText)
@@ -213,6 +214,55 @@ func TestSweepButtonDisabledWhileRunningAndReenabledAfter(t *testing.T) {
 	}
 }
 
+// TestEmptyTablePlaceholderShowsThenHidesAfterFirstDevice covers the U4
+// blank-pane fix: before any device is known, the placeholder's exact plain
+// wording is rendered instead of a blank table; it disappears the moment
+// the store gains its first row.
+func TestEmptyTablePlaceholderShowsThenHidesAfterFirstDevice(t *testing.T) {
+	fake := &fakeDiscoverSession{}
+	view, devices := newDiscoveryTestView(t, fake)
+
+	if !view.placeholder.Visible() {
+		t.Fatal("placeholder should be visible before any device is known")
+	}
+	if got, want := view.placeholder.Text, emptyTablePlaceholder; got != want {
+		t.Errorf("placeholder text = %q, want %q", got, want)
+	}
+
+	devices.Upsert(store.DeviceRow{
+		Key:    store.DeviceKey{Instance: 1, IP: "192.0.2.1"},
+		Source: "network",
+	})
+
+	if view.placeholder.Visible() {
+		t.Error("placeholder should be hidden once a device row exists")
+	}
+
+	devices.Clear()
+
+	if !view.placeholder.Visible() {
+		t.Error("placeholder should reappear once the table is cleared back to empty")
+	}
+}
+
+// TestSweepExportedMethodMatchesButtonTap covers the U4 seam boot.Compose
+// wires Home's "Discover my network" button through: the exported Sweep
+// method must behave identically to tapping the rendered button (button
+// disabled while running, device rows populated after).
+func TestSweepExportedMethodMatchesButtonTap(t *testing.T) {
+	fake := &fakeDiscoverSession{ch: closedChannelOf(twoTestSummaries())}
+	view, _ := newDiscoveryTestView(t, fake)
+	view.sweepDone = make(chan struct{})
+
+	view.Sweep()
+	awaitSweep(t, view.sweepDone)
+
+	rows, _ := view.table.Length()
+	if rows != 2 {
+		t.Fatalf("table rows after Sweep() = %d, want 2", rows)
+	}
+}
+
 func TestSelectingRowInvokesOnSelectWithExactRow(t *testing.T) {
 	fake := &fakeDiscoverSession{}
 	view, devices := newDiscoveryTestView(t, fake)
@@ -254,5 +304,64 @@ func TestSelectingRowInvokesOnSelectWithExactRow(t *testing.T) {
 	want.LastSeen = fixedLastSeen
 	if got != want {
 		t.Errorf("OnSelect row = %+v, want %+v", got, want)
+	}
+}
+
+// TestDiscoveryTableRendersSimulatedAndNetworkRows covers the U3 Source/Name
+// columns end to end: a "simulated" row (with a Name) and a "network" row
+// (without one) both appear in the rendered table, with the Source column
+// showing plain-language "Simulated"/"Network" text and the Name column
+// blank only for the row with no known name.
+func TestDiscoveryTableRendersSimulatedAndNetworkRows(t *testing.T) {
+	fake := &fakeDiscoverSession{}
+	view, devices := newDiscoveryTestView(t, fake)
+
+	a := test.NewApp()
+	w := a.NewWindow("capture")
+	defer w.Close()
+	w.SetContent(view)
+	w.Resize(fyne.NewSize(700, 300))
+
+	before := w.Canvas().Capture()
+
+	devices.Upsert(store.DeviceRow{
+		Key:    store.DeviceKey{Instance: 1001, IP: "127.0.0.2"},
+		Port:   47901,
+		Name:   "Boiler",
+		Source: "simulated",
+	})
+	devices.Upsert(store.DeviceRow{
+		Key:      store.DeviceKey{Instance: 70001, IP: "192.0.2.10"},
+		Port:     47808,
+		VendorID: 260,
+		Source:   "network",
+	})
+
+	after := w.Canvas().Capture()
+	if imagesEqual(before, after) {
+		t.Fatal("canvas capture is unchanged after upserting two device rows")
+	}
+
+	rows, cols := view.table.Length()
+	if rows != 2 {
+		t.Fatalf("table rows = %d, want 2", rows)
+	}
+	if cols != len(discoveryColumns) {
+		t.Fatalf("table cols = %d, want %d", cols, len(discoveryColumns))
+	}
+
+	// Snapshot is sorted by Instance ascending: row 0 is the simulated
+	// device (1001), row 1 is the network device (70001).
+	if got, want := cellText(view, 0, 1), "Boiler"; got != want {
+		t.Errorf("row 0 (simulated) Name column = %q, want %q", got, want)
+	}
+	if got, want := cellText(view, 0, 6), "Simulated"; got != want {
+		t.Errorf("row 0 (simulated) Source column = %q, want %q", got, want)
+	}
+	if got, want := cellText(view, 1, 1), ""; got != want {
+		t.Errorf("row 1 (network) Name column = %q, want %q (blank when unknown)", got, want)
+	}
+	if got, want := cellText(view, 1, 6), "Network"; got != want {
+		t.Errorf("row 1 (network) Source column = %q, want %q", got, want)
 	}
 }

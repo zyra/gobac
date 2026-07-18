@@ -32,6 +32,45 @@ func TestLoadSaveReloadRoundTrips(t *testing.T) {
 	}
 }
 
+// TestLoadBytesDecodesWithNoDestinationPath covers the Simulator view's
+// "Load example scenario" path (task U3): decoding an embedded scenario's
+// bytes must produce the same scenario Load would from the equivalent file,
+// but with no destination path and no dirty flag.
+func TestLoadBytesDecodesWithNoDestinationPath(t *testing.T) {
+	data, err := os.ReadFile("testdata/roundtrip.yaml")
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+
+	doc, err := LoadBytes(data, "yaml")
+	if err != nil {
+		t.Fatalf("LoadBytes: %v", err)
+	}
+
+	loaded, err := Load("testdata/roundtrip.yaml")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !reflect.DeepEqual(doc.Scenario(), loaded.Scenario()) {
+		t.Fatalf("LoadBytes scenario mismatch:\ngot:  %#v\nwant: %#v", doc.Scenario(), loaded.Scenario())
+	}
+	if doc.Path() != "" {
+		t.Errorf("Path() = %q, want \"\" (LoadBytes has no destination path)", doc.Path())
+	}
+	if doc.Dirty() {
+		t.Error("Dirty() = true for a freshly decoded document, want false")
+	}
+}
+
+// TestLoadBytesRejectsInvalidScenario covers the decode-failure path: bytes
+// that don't decode into a valid scenario return an error rather than a
+// document holding a zero-value scenario.
+func TestLoadBytesRejectsInvalidScenario(t *testing.T) {
+	if _, err := LoadBytes([]byte("not valid scenario yaml: [1, 2"), "yaml"); err == nil {
+		t.Fatal("expected an error decoding invalid scenario bytes, got nil")
+	}
+}
+
 func TestNewDocumentValidatesAndSaves(t *testing.T) {
 	doc := New()
 	if err := doc.Validate(); err != nil {

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strconv"
@@ -12,7 +13,10 @@ import (
 	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/widget"
 
+	"github.com/zyra/gobac/gui/assets"
 	"github.com/zyra/gobac/gui/internal/scenariodoc"
+	"github.com/zyra/gobac/gui/internal/simrun"
+	"github.com/zyra/gobac/gui/internal/store"
 	"github.com/zyra/gobac/v2/simulator"
 )
 
@@ -51,22 +55,84 @@ func classifyObjectType(t string) string {
 	}
 }
 
-// EditorView is the Simulator Editor navigation entry: toolbar (New, Open,
-// Save, Save As), a network form, and master-detail device/object editing
-// over a scenariodoc.Document, with live validation.
-type EditorView struct {
-	*fyne.Container
+// simRunner is the subset of *simrun.Runner the Simulator view depends on,
+// so tests can substitute a fake instead of running real UDP sockets.
+type simRunner interface {
+	Devices() []simrun.RunningDevice
+	Stop()
+	Err() <-chan error
+}
 
-	shell *AppShell
-	doc   *scenariodoc.Document
+var _ simRunner = (*simrun.Runner)(nil)
+
+// defaultStartRunner decodes sc and starts it via simrun.Start, adapting
+// *simrun.Runner to the simRunner interface.
+func defaultStartRunner(ctx context.Context, sc *simulator.Scenario) (simRunner, error) {
+	return simrun.Start(ctx, sc)
+}
+
+// EditorView is the Simulator navigation entry (task U3 — consolidating the
+// former Simulator Editor + Quickstart views): toolbar (New, Open, Save,
+// Save As, Load example scenario, Run, Stop), a network form, master-detail
+// device/object editing over a scenariodoc.Document with live validation,
+// and a running-devices strip visible while a simulation is live.
+//
+// EditorView is a proper widget (widget.BaseWidget + CreateRenderer) rather
+// than an embedded *fyne.Container; see the identical note on DiscoveryView
+// in discovery.go.
+type EditorView struct {
+	widget.BaseWidget
+
+	shell   *AppShell
+	devices *store.DeviceStore
+	doc     *scenariodoc.Document
 
 	// fieldErrors is the most recent scenariodoc.FieldErrors result, kept
 	// for both the field-hint display and same-package test access.
 	fieldErrors map[string]string
+	// valid mirrors the most recent Document.Validate() outcome; it gates
+	// the Run button the same way fieldErrors gates saveBtn (a document
+	// simrun could never run is never offered as runnable).
+	valid bool
 
-	titleLabel   *widget.Label
-	summaryLabel *widget.Label
-	saveBtn      *widget.Button
+	titleLabel     *widget.Label
+	summaryLabel   *widget.Label
+	saveBtn        *widget.Button
+	loadExampleBtn *widget.Button
+	runBtn         *widget.Button
+	stopBtn        *widget.Button
+
+	// runningRowsBox holds one Label per live device, rebuilt on every
+	// Run/Stop by refreshRunningRows. A plain VBox (rather than a
+	// widget.List, which is a scroller sized independently of its content)
+	// so the strip's rendered height always includes every row instead of
+	// clipping to the scroller's own small default MinSize.
+	runningRowsBox *fyne.Container
+	runningRows    []simrun.RunningDevice
+	runningStrip   *fyne.Container
+
+	running      simRunner
+	errWatchStop chan struct{}
+
+	// StartRunner starts a decoded scenario. Exported so tests can replace
+	// it with a fake runner instead of exercising real UDP sockets.
+	// Defaults to wrapping simrun.Start.
+	StartRunner func(ctx context.Context, sc *simulator.Scenario) (simRunner, error)
+
+	// PortHint, when set, is called after a simulation starts with the
+	// ports of every running device. A non-empty return value is appended
+	// (space-separated) to the "Simulation running" status text as an
+	// extra plain-language sentence. Wired by boot.go to surface a
+	// Settings-port mismatch; nil (no hint) by default.
+	PortHint func(ports []uint16) string
+
+	// startDone/stopDone are test-only synchronization seams, mirroring
+	// DiscoveryView.sweepDone: if non-nil when the corresponding method is
+	// invoked, each is closed once that call's background goroutine
+	// finishes all of its work (including any fyne.Do UI update).
+	// Production code leaves them nil.
+	startDone chan struct{}
+	stopDone  chan struct{}
 
 	modeSelect *widget.Select
 	ifaceEntry *widget.Entry
@@ -107,22 +173,33 @@ type EditorView struct {
 	objInitialPriorityEntry *widget.Entry
 	objNumberOfStatesEntry  *widget.Entry
 	objCovIncrementEntry    *widget.Entry
+
+	root *fyne.Container
 }
 
-// NewEditorView builds the Simulator Editor view, holding a
-// *scenariodoc.Document that starts as scenariodoc.New() (a minimal,
-// already-valid single-device scenario).
-func NewEditorView(shell *AppShell) fyne.CanvasObject {
+// NewEditorView builds the Simulator view, holding a *scenariodoc.Document
+// that starts as scenariodoc.New() (a minimal, already-valid single-device
+// scenario). devices is the shared DeviceStore that Run injects rows into
+// (Source "simulated") and Stop removes them from.
+func NewEditorView(devices *store.DeviceStore, shell *AppShell) fyne.CanvasObject {
 	v := &EditorView{
 		shell:          shell,
+		devices:        devices,
 		doc:            scenariodoc.New(),
 		selectedDevice: -1,
 		selectedObject: -1,
+		StartRunner:    defaultStartRunner,
 	}
 	v.buildWidgets()
+	v.ExtendBaseWidget(v)
 	v.selectDevice(0)
 	v.revalidate()
 	return v
+}
+
+// CreateRenderer implements fyne.Widget.
+func (v *EditorView) CreateRenderer() fyne.WidgetRenderer {
+	return widget.NewSimpleRenderer(v.root)
 }
 
 // buildWidgets constructs every widget that lives for the view's whole
@@ -134,7 +211,21 @@ func (v *EditorView) buildWidgets() {
 	openBtn := widget.NewButton("Open", v.onOpen)
 	v.saveBtn = widget.NewButton("Save", v.onSave)
 	saveAsBtn := widget.NewButton("Save As", v.onSaveAs)
-	toolbar := container.NewHBox(newBtn, openBtn, v.saveBtn, saveAsBtn)
+	v.loadExampleBtn = widget.NewButton("Load example scenario", v.onLoadExample)
+	v.runBtn = widget.NewButton("▶ Run", v.onRun)
+	v.stopBtn = widget.NewButton("■ Stop", v.onStop)
+	v.stopBtn.Disable()
+	toolbar := container.NewHBox(
+		newBtn, openBtn, v.saveBtn, saveAsBtn,
+		widget.NewSeparator(),
+		v.loadExampleBtn,
+		widget.NewSeparator(),
+		v.runBtn, v.stopBtn,
+	)
+
+	v.runningRowsBox = container.NewVBox()
+	v.runningStrip = container.NewVBox(widget.NewLabel("Running devices:"), v.runningRowsBox)
+	v.runningStrip.Hide()
 
 	v.titleLabel = widget.NewLabel("")
 	v.summaryLabel = widget.NewLabel("valid")
@@ -185,7 +276,24 @@ func (v *EditorView) buildWidgets() {
 	mainSplit := container.NewHSplit(listSplit, formSplit)
 
 	top := container.NewVBox(toolbar, v.titleLabel, networkForm)
-	v.Container = container.NewBorder(top, v.summaryLabel, nil, nil, mainSplit)
+	bottom := container.NewVBox(v.runningStrip, v.summaryLabel)
+	v.root = container.NewBorder(top, bottom, nil, nil, mainSplit)
+}
+
+// refreshRunningRows rebuilds runningRowsBox's Label children from
+// runningRows. Called after every change to runningRows (Run/Stop).
+func (v *EditorView) refreshRunningRows() {
+	labels := make([]fyne.CanvasObject, len(v.runningRows))
+	for i, d := range v.runningRows {
+		labels[i] = widget.NewLabel(runningRowText(d))
+	}
+	v.runningRowsBox.Objects = labels
+	v.runningRowsBox.Refresh()
+}
+
+// runningRowText renders one running-devices strip entry.
+func runningRowText(d simrun.RunningDevice) string {
+	return fmt.Sprintf("%d %s — %s:%d", d.ID, d.Name, d.Addr, d.Port)
 }
 
 // ---- device list ----
@@ -1083,12 +1191,34 @@ func (v *EditorView) revalidate() {
 	if err != nil {
 		v.summaryLabel.SetText(err.Error())
 		v.saveBtn.Disable()
+		v.valid = false
 	} else {
 		v.summaryLabel.SetText("valid")
 		v.saveBtn.Enable()
+		v.valid = true
 	}
 	v.refreshFieldHints()
 	v.refreshTitle()
+	v.updateRunButtons()
+}
+
+// updateRunButtons enables/disables Run and Stop from the current running
+// state and document validity: Stop is enabled only while a simulation is
+// live; Run is enabled only while none is live and the document validates
+// (mirroring saveBtn's gating — a document simrun would reject is never
+// offered as runnable).
+func (v *EditorView) updateRunButtons() {
+	if v.running != nil {
+		v.runBtn.Disable()
+		v.stopBtn.Enable()
+		return
+	}
+	v.stopBtn.Disable()
+	if v.valid {
+		v.runBtn.Enable()
+	} else {
+		v.runBtn.Disable()
+	}
 }
 
 // refreshFieldHints applies the current fieldErrors to whichever
@@ -1132,10 +1262,29 @@ func (v *EditorView) onNew() {
 	v.newDocument()
 }
 
-// newDocument replaces the held document with a fresh scenariodoc.New()
-// and refreshes every view that depends on it.
+// newDocument replaces the held document with a fresh scenariodoc.New().
 func (v *EditorView) newDocument() {
-	v.doc = scenariodoc.New()
+	v.replaceDocument(scenariodoc.New())
+}
+
+// openPath loads the scenario at path, replacing the held document on
+// success. Exported to the test seam only (unexported); the toolbar's Open
+// button drives it via dialog.ShowFileOpen.
+func (v *EditorView) openPath(path string) error {
+	doc, err := scenariodoc.Load(path)
+	if err != nil {
+		return err
+	}
+	v.replaceDocument(doc)
+	return nil
+}
+
+// replaceDocument swaps in doc as the held document and refreshes every
+// view that depends on it: the device list, the network form, the
+// device/object detail forms (re-selecting the first device if any), and
+// validation. Shared by New, Open, and Load example scenario.
+func (v *EditorView) replaceDocument(doc *scenariodoc.Document) {
+	v.doc = doc
 	v.selectedDevice = -1
 	v.selectedObject = -1
 	v.deviceList.Refresh()
@@ -1149,27 +1298,181 @@ func (v *EditorView) newDocument() {
 	v.revalidate()
 }
 
-// openPath loads the scenario at path, replacing the held document on
-// success. Exported to the test seam only (unexported); the toolbar's Open
-// button drives it via dialog.ShowFileOpen.
-func (v *EditorView) openPath(path string) error {
-	doc, err := scenariodoc.Load(path)
+// onLoadExample loads the bundled example scenario (assets.QuickstartScenario)
+// into the editor, replacing the current document — the old one-click
+// Quickstart demo becomes: Simulator -> Load example scenario -> Run. If
+// the current document has unsaved edits, it confirms before discarding
+// them.
+func (v *EditorView) onLoadExample() {
+	if v.doc.Dirty() {
+		if win := currentWindow(); win != nil {
+			dialog.ShowConfirm(
+				"Unsaved changes",
+				"Loading the example scenario will discard unsaved changes. Continue?",
+				func(ok bool) {
+					if ok {
+						v.loadExampleScenario()
+					}
+				},
+				win,
+			)
+			return
+		}
+	}
+	v.loadExampleScenario()
+}
+
+// loadExampleScenario decodes assets.QuickstartScenario and replaces the
+// held document with it.
+func (v *EditorView) loadExampleScenario() {
+	doc, err := scenariodoc.LoadBytes(assets.QuickstartScenario, "yaml")
 	if err != nil {
-		return err
+		v.shell.SetStatus("example scenario invalid: " + err.Error())
+		return
 	}
-	v.doc = doc
-	v.selectedDevice = -1
-	v.selectedObject = -1
-	v.deviceList.Refresh()
-	v.refreshNetworkForm()
-	if len(v.doc.Scenario().Devices) > 0 {
-		v.selectDevice(0)
-	} else {
-		v.rebuildDeviceForm()
-		v.rebuildObjectForm()
+	v.replaceDocument(doc)
+}
+
+// ---- run / stop ----
+
+// onRun validates the current document, then serializes it into a
+// *simulator.Scenario (the document's own live Scenario() accessor) and
+// starts it via StartRunner (simrun.Start in production, on a loopback
+// UDP responder per device). A scenario simrun can't run at all — anything
+// other than a loopback multi-port/single-device scenario — is reported in
+// plain language rather than the raw error text.
+func (v *EditorView) onRun() {
+	if err := v.doc.Validate(); err != nil {
+		v.shell.SetStatus("scenario is invalid: " + err.Error())
+		return
 	}
-	v.revalidate()
-	return nil
+
+	v.runBtn.Disable()
+
+	sc := v.doc.Scenario()
+
+	done := v.startDone
+	go func() {
+		if done != nil {
+			defer close(done)
+		}
+
+		r, err := v.StartRunner(context.Background(), sc)
+		if err != nil {
+			fyne.Do(func() { v.updateRunButtons() })
+			if errors.Is(err, simrun.ErrUnsupportedScenario) {
+				v.shell.SetStatus("Simulations run privately on this computer. Set the network mode to multi-port with loopback addresses (or use the example scenario).")
+			} else {
+				v.shell.SetStatus("Couldn't start the simulation — " + err.Error())
+			}
+			return
+		}
+
+		rows := r.Devices()
+		for _, d := range rows {
+			v.devices.Upsert(store.DeviceRow{
+				Key:    store.DeviceKey{Instance: d.ID, IP: d.Addr},
+				Port:   d.Port,
+				Name:   d.Name,
+				Source: "simulated",
+			})
+		}
+
+		v.errWatchStop = make(chan struct{})
+		go v.watchErrors(r, v.errWatchStop)
+
+		fyne.Do(func() {
+			v.running = r
+			v.runningRows = rows
+			v.refreshRunningRows()
+			v.runningStrip.Show()
+			// v.root (not just runningStrip) needs a Refresh: root's
+			// Border layout sized its bottom region from runningStrip's
+			// MinSize while it was hidden (zero); only re-running that
+			// layout, not merely repainting runningStrip, makes room for
+			// it now that it is visible.
+			v.root.Refresh()
+			v.updateRunButtons()
+		})
+
+		status := fmt.Sprintf("Simulation running — %d devices (ports %s)", len(rows), portsText(rows))
+		if v.PortHint != nil {
+			if hint := v.PortHint(portsOf(rows)); hint != "" {
+				status += " " + hint
+			}
+		}
+		v.shell.SetStatus(status)
+	}()
+}
+
+// watchErrors forwards fatal runner errors to the status bar until stop is
+// closed.
+func (v *EditorView) watchErrors(r simRunner, stop <-chan struct{}) {
+	for {
+		select {
+		case err := <-r.Err():
+			v.shell.SetStatus("simulation error: " + err.Error())
+		case <-stop:
+			return
+		}
+	}
+}
+
+// onStop shuts the running simulation down, removes its devices from the
+// DeviceStore, and resets the Run/Stop buttons.
+func (v *EditorView) onStop() {
+	v.stopBtn.Disable()
+
+	r := v.running
+	if r == nil {
+		fyne.Do(func() { v.updateRunButtons() })
+		return
+	}
+
+	done := v.stopDone
+	go func() {
+		if done != nil {
+			defer close(done)
+		}
+
+		if v.errWatchStop != nil {
+			close(v.errWatchStop)
+			v.errWatchStop = nil
+		}
+		r.Stop()
+
+		for _, d := range v.runningRows {
+			v.devices.Remove(store.DeviceKey{Instance: d.ID, IP: d.Addr})
+		}
+		fyne.Do(func() {
+			v.running = nil
+			v.runningRows = nil
+			v.refreshRunningRows()
+			v.runningStrip.Hide()
+			v.root.Refresh()
+			v.updateRunButtons()
+		})
+		v.shell.SetStatus("Simulation stopped")
+	}()
+}
+
+// portsText renders rows' ports as a comma-separated list for the
+// "Simulation running" status text.
+func portsText(rows []simrun.RunningDevice) string {
+	parts := make([]string, len(rows))
+	for i, r := range rows {
+		parts[i] = strconv.FormatUint(uint64(r.Port), 10)
+	}
+	return strings.Join(parts, ", ")
+}
+
+// portsOf extracts rows' ports, in order, for PortHint.
+func portsOf(rows []simrun.RunningDevice) []uint16 {
+	ports := make([]uint16, len(rows))
+	for i, r := range rows {
+		ports[i] = r.Port
+	}
+	return ports
 }
 
 // save writes the document to its current path. Returns scenariodoc.ErrNoPath
@@ -1200,7 +1503,7 @@ func (v *EditorView) onOpen() {
 		path := reader.URI().Path()
 		reader.Close()
 		if loadErr := v.openPath(path); loadErr != nil {
-			v.shell.SetStatus("open failed: " + loadErr.Error())
+			v.shell.SetStatus("Couldn't open that file — " + loadErr.Error())
 		}
 	}, win)
 	fd.SetFilter(storage.NewExtensionFileFilter([]string{".yaml", ".yml", ".json"}))
@@ -1213,7 +1516,7 @@ func (v *EditorView) onSave() {
 		return
 	}
 	if err := v.save(); err != nil {
-		v.shell.SetStatus("save failed: " + err.Error())
+		v.shell.SetStatus("Couldn't save that file — " + err.Error())
 	}
 }
 
@@ -1229,7 +1532,7 @@ func (v *EditorView) onSaveAs() {
 		path := writer.URI().Path()
 		writer.Close()
 		if saveErr := v.saveAs(path); saveErr != nil {
-			v.shell.SetStatus("save failed: " + saveErr.Error())
+			v.shell.SetStatus("Couldn't save that file — " + saveErr.Error())
 		}
 	}, win)
 	fd.SetFilter(storage.NewExtensionFileFilter([]string{".yaml", ".yml", ".json"}))

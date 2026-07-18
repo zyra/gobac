@@ -107,8 +107,12 @@ var writeTagValues = map[string]uint8{
 // BrowserView is the Object Browser navigation entry: an object tree (left)
 // fed by a device's Object_List, and a property table (right) fed by
 // Session.ReadMultiple for the selected object, with a write dialog.
+//
+// BrowserView is a proper widget (widget.BaseWidget + CreateRenderer)
+// rather than an embedded *fyne.Container; see the identical note on
+// DiscoveryView in discovery.go.
 type BrowserView struct {
-	*fyne.Container
+	widget.BaseWidget
 
 	sess    session.Session
 	objects *store.ObjectCache
@@ -143,6 +147,8 @@ type BrowserView struct {
 	loadDone  chan struct{}
 	propsDone chan struct{}
 	writeDone chan struct{}
+
+	root *fyne.Container
 }
 
 // NewBrowserView builds the Object Browser view: an object tree bound to
@@ -185,9 +191,15 @@ func NewBrowserView(sess session.Session, objects *store.ObjectCache, shell *App
 	split := container.NewHSplit(v.tree, right)
 	split.Offset = 0.3
 
-	v.Container = container.NewBorder(nil, nil, nil, nil, split)
+	v.root = container.NewBorder(nil, nil, nil, nil, split)
+	v.ExtendBaseWidget(v)
 
 	return v
+}
+
+// CreateRenderer implements fyne.Widget.
+func (v *BrowserView) CreateRenderer() fyne.WidgetRenderer {
+	return widget.NewSimpleRenderer(v.root)
 }
 
 // treeUID scheme: "" is the root; "g:<type>" is a group (branch) node;

@@ -16,7 +16,7 @@ import (
 // discoveryColumns are the discovery table's column headers, in display
 // order.
 var discoveryColumns = []string{
-	"Instance", "Address", "Vendor ID", "Max APDU", "Segmentation", "Source", "Last seen",
+	"Instance", "Name", "Address", "Vendor ID", "Max APDU", "Segmentation", "Source", "Last seen",
 }
 
 // segmentationText maps types.Segmentation values (bacnet/types/segmentation.go)
@@ -28,8 +28,22 @@ var segmentationText = map[uint8]string{
 	3: "none",
 }
 
+// sourceText maps store.DeviceRow.Source values to the plain-language
+// display text the Source column renders (task U3): "Simulated" for a
+// device injected by the Simulator view's Run controls, "Network" for a
+// real Who-Is sighting.
+var sourceText = map[string]string{
+	"simulated": "Simulated",
+	"network":   "Network",
+}
+
 // defaultSweepDuration is the pre-selected entry in the duration selector.
 const defaultSweepDuration = "3s"
+
+// emptyTablePlaceholder is the plain-language text shown in place of the
+// device table before any device has been found (task U4: never a blank
+// pane as the first thing on screen).
+const emptyTablePlaceholder = "No devices yet — click Scan network, or run the Simulator."
 
 // sweepDurations are the selectable Who-Is sweep durations, in display
 // order. Every entry must parse with time.ParseDuration.
@@ -37,18 +51,27 @@ var sweepDurations = []string{"1s", "3s", "10s"}
 
 // DiscoveryView is the Discovery navigation entry: sweep controls plus a
 // live device table bound to a store.DeviceStore.
+//
+// DiscoveryView is a proper widget (widget.BaseWidget + CreateRenderer)
+// rather than an embedded *fyne.Container, for the same reason AppShell is
+// (see shell.go): a struct that only embeds *fyne.Container satisfies
+// fyne.CanvasObject by promotion, but the driver's render-tree walk
+// recognizes concrete *fyne.Container or fyne.Widget values, not types that
+// merely embed one — so its children would never be painted when placed
+// inside another container (e.g. AppShell.Content).
 type DiscoveryView struct {
-	*fyne.Container
+	widget.BaseWidget
 
 	sess    session.Session
 	devices *store.DeviceStore
 	shell   *AppShell
 
-	sweepBtn *widget.Button
-	clearBtn *widget.Button
-	duration *widget.Select
-	count    *widget.Label
-	table    *widget.Table
+	sweepBtn    *widget.Button
+	clearBtn    *widget.Button
+	duration    *widget.Select
+	count       *widget.Label
+	table       *widget.Table
+	placeholder *widget.Label
 
 	cached []store.DeviceRow
 
@@ -57,6 +80,8 @@ type DiscoveryView struct {
 	OnSelect func(store.DeviceRow)
 
 	removeListener func()
+
+	root *fyne.Container
 
 	// sweepDone is a test-only synchronization seam: if non-nil when
 	// sweep() is invoked, it is closed once that sweep's background
@@ -82,8 +107,9 @@ func NewDiscoveryView(sess session.Session, devices *store.DeviceStore, shell *A
 	v.duration = widget.NewSelect(sweepDurations, nil)
 	v.duration.SetSelected(defaultSweepDuration)
 
-	v.sweepBtn = widget.NewButton("Sweep", v.sweep)
+	v.sweepBtn = widget.NewButton("Scan network", v.sweep)
 	v.clearBtn = widget.NewButton("Clear", v.clear)
+	v.placeholder = widget.NewLabel(emptyTablePlaceholder)
 
 	toolbar := container.NewHBox(v.sweepBtn, v.duration, v.clearBtn, v.count)
 
@@ -108,12 +134,18 @@ func NewDiscoveryView(sess session.Session, devices *store.DeviceStore, shell *A
 		}
 	}
 
-	v.Container = container.NewBorder(toolbar, nil, nil, nil, v.table)
+	v.root = container.NewBorder(toolbar, nil, nil, nil, container.NewStack(v.table, v.placeholder))
+	v.ExtendBaseWidget(v)
 
 	v.removeListener = v.devices.AddListener(v.refresh)
 	v.refresh()
 
 	return v
+}
+
+// CreateRenderer implements fyne.Widget.
+func (v *DiscoveryView) CreateRenderer() fyne.WidgetRenderer {
+	return widget.NewSimpleRenderer(v.root)
 }
 
 // cellText renders the data cell at id from the cached snapshot.
@@ -126,19 +158,24 @@ func (v *DiscoveryView) cellText(id widget.TableCellID) string {
 	case 0:
 		return fmt.Sprintf("%d", row.Key.Instance)
 	case 1:
-		return fmt.Sprintf("%s:%d", row.Key.IP, row.Port)
+		return row.Name
 	case 2:
-		return fmt.Sprintf("%d", row.VendorID)
+		return fmt.Sprintf("%s:%d", row.Key.IP, row.Port)
 	case 3:
-		return fmt.Sprintf("%d", row.MaxApdu)
+		return fmt.Sprintf("%d", row.VendorID)
 	case 4:
+		return fmt.Sprintf("%d", row.MaxApdu)
+	case 5:
 		if text, ok := segmentationText[row.Segmentation]; ok {
 			return text
 		}
 		return fmt.Sprintf("%d", row.Segmentation)
-	case 5:
-		return row.Source
 	case 6:
+		if text, ok := sourceText[row.Source]; ok {
+			return text
+		}
+		return row.Source
+	case 7:
 		return row.LastSeen.Format("15:04:05")
 	}
 	return ""
@@ -149,8 +186,18 @@ func (v *DiscoveryView) cellText(id widget.TableCellID) string {
 func (v *DiscoveryView) refresh() {
 	fyne.Do(func() {
 		v.cached = v.devices.Snapshot()
+		empty := len(v.cached) == 0
+		// Hide the column header while empty: it has nothing to label, and
+		// leaving it shown would visually collide with the centered
+		// placeholder text overlaid in the same area.
+		v.table.ShowHeaderRow = !empty
 		v.table.Refresh()
 		v.count.SetText(fmt.Sprintf("%d devices", len(v.cached)))
+		if empty {
+			v.placeholder.Show()
+		} else {
+			v.placeholder.Hide()
+		}
 	})
 }
 
@@ -158,6 +205,14 @@ func (v *DiscoveryView) refresh() {
 // refresh.
 func (v *DiscoveryView) clear() {
 	v.devices.Clear()
+}
+
+// Sweep runs a Who-Is sweep exactly as if the user had tapped "Scan
+// network". Exported so callers outside this package — namely Home's
+// "Discover my network" button, wired in boot.Compose — can trigger a scan
+// without reaching into an unexported method.
+func (v *DiscoveryView) Sweep() {
+	v.sweep()
 }
 
 // sweep runs a Who-Is sweep for the selected duration on a goroutine,
@@ -179,7 +234,7 @@ func (v *DiscoveryView) sweep() {
 		ch, err := v.sess.Discover(context.Background(), duration)
 		if err != nil {
 			fyne.Do(func() { v.sweepBtn.Enable() })
-			v.shell.SetStatus("sweep failed: " + err.Error())
+			v.shell.SetStatus("Couldn't scan the network — " + err.Error())
 			return
 		}
 

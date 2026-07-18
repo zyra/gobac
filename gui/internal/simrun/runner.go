@@ -1,6 +1,7 @@
 // Package simrun runs a simulator.Scenario's devices in-process, each as a
-// loopback UDP BACnet/IP responder, for the Quickstart view (task G8). It
-// has no dependency on Fyne and is unit-tested on its own.
+// loopback UDP BACnet/IP responder, for the Simulator view's Run/Stop
+// controls (originally task G8, moved into the Simulator view by task U3).
+// It has no dependency on Fyne and is unit-tested on its own.
 package simrun
 
 import (
@@ -15,9 +16,11 @@ import (
 	"github.com/zyra/gobac/v2/simulator"
 )
 
-// errUnsupportedScenario is returned by Start when sc is not a loopback
-// multi-port (or single-device) scenario.
-var errUnsupportedScenario = errors.New("quickstart requires multi-port loopback scenarios")
+// ErrUnsupportedScenario is returned by Start when sc is not a loopback
+// multi-port (or single-device) scenario. Exported so callers (the
+// Simulator view) can recognize it with errors.Is and show plain-language
+// guidance instead of the raw error text.
+var ErrUnsupportedScenario = errors.New("the simulator requires multi-port loopback scenarios")
 
 // deviceIP is the loopback address every in-process device binds to. It
 // deliberately is not 127.0.0.1: the wrapped client library always sends a
@@ -57,7 +60,7 @@ type Runner struct {
 // Start validates sc, builds its object model, and brings up one loopback
 // UDP responder per device, each serving on a goroutine. It requires a
 // loopback multi-port (or single-device) scenario with no non-loopback
-// device addresses: quickstart runs are scoped to loopback so they can
+// device addresses: simulator runs are scoped to loopback so they can
 // never collide with, or be mistaken for, a real BACnet/IP network
 // (gui-architecture.md §4.5).
 //
@@ -68,11 +71,11 @@ func Start(ctx context.Context, sc *simulator.Scenario) (*Runner, error) {
 		return nil, errors.New("scenario is nil")
 	}
 	if sc.Network.Mode != "multi-port" && sc.Network.Mode != "single-device" {
-		return nil, errUnsupportedScenario
+		return nil, ErrUnsupportedScenario
 	}
 	for i := range sc.Devices {
 		if !isLoopbackOrEmpty(sc.Devices[i].Address) {
-			return nil, errUnsupportedScenario
+			return nil, ErrUnsupportedScenario
 		}
 	}
 

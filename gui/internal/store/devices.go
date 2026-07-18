@@ -21,9 +21,13 @@ type DeviceRow struct {
 	MaxApdu      uint32
 	Segmentation uint8
 	// Source records where this row came from: "network" for a real
-	// Who-Is sighting, "local-sim" for a device injected by the
-	// in-process simulator quickstart (G8).
-	Source   string
+	// Who-Is sighting, "simulated" for a device injected by the Simulator
+	// view's in-process runner (task U3).
+	Source string
+	// Name is the device's scenario name when known (every "simulated"
+	// row has one); "" for a "network" row, since a real Who-Is sighting
+	// never carries a name.
+	Name     string
 	LastSeen time.Time
 }
 
@@ -52,14 +56,26 @@ func NewDeviceStore() *DeviceStore {
 // Upsert inserts or merges row into the store, stamping LastSeen from
 // Now(), and notifies listeners.
 //
-// A row already recorded with Source "local-sim" keeps that Source even
-// when re-sighted with Source "network" — a quickstart device stays
-// identified as local-sim even if it also answers a real Who-Is sweep on
-// loopback. Every other field is replaced with the incoming row's value.
+// Two fields merge with the existing row instead of being blindly
+// overwritten:
+//   - A row already recorded with Source "simulated" keeps that Source
+//     even when re-sighted with Source "network" — a simulated device
+//     stays identified as simulated even if it also answers a real Who-Is
+//     sweep on loopback.
+//   - Name is kept from the existing row when the incoming row's Name is
+//     empty, so a simulated device's name survives a later re-sighting
+//     from a source (like a Who-Is sweep) that never carries one.
+//
+// Every other field is replaced with the incoming row's value.
 func (s *DeviceStore) Upsert(row DeviceRow) {
 	s.mu.Lock()
-	if existing, ok := s.rows[row.Key]; ok && existing.Source == "local-sim" && row.Source == "network" {
-		row.Source = "local-sim"
+	if existing, ok := s.rows[row.Key]; ok {
+		if existing.Source == "simulated" && row.Source == "network" {
+			row.Source = "simulated"
+		}
+		if row.Name == "" && existing.Name != "" {
+			row.Name = existing.Name
+		}
 	}
 	if s.Now != nil {
 		row.LastSeen = s.Now()

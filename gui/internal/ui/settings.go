@@ -2,12 +2,31 @@ package ui
 
 import (
 	"fmt"
+	"net"
 	"strconv"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
+
+	"github.com/zyra/gobac/gui/internal/netpick"
+	"github.com/zyra/gobac/gui/internal/session"
 )
+
+// automaticLabel is the network Select's option that persists an empty
+// Settings.Interface, which StartFromSettings resolves to the best real
+// interface at start time. It keeps the "(recommended)" wording: unlike
+// allNetworksLabel's limited broadcast, Automatic's per-interface directed
+// broadcast is reliable on multi-homed hosts too (see task U5's risk note).
+const automaticLabel = "Automatic (recommended)"
+
+// allNetworksLabel is the network Select's first option: choosing it
+// persists session.AllNetworksSentinel, which StartFromSettings maps to the
+// bacnet library's wildcard listen/send (binds 0.0.0.0, Who-Is goes to the
+// limited broadcast address). It's listed without "(recommended)" because
+// limited broadcast isn't guaranteed to reach every attached network on a
+// multi-homed host the way Automatic's directed broadcast is.
+const allNetworksLabel = "All networks"
 
 // Preference keys under app.Preferences().
 const (
@@ -71,39 +90,91 @@ func trySaveSettings(a fyne.App, iface, portText string) error {
 	return nil
 }
 
-// NewSettingsDialog builds the "Settings…" dialog: Interface and UDP Port
-// fields, seeded from the current preferences, saving on confirm.
-func NewSettingsDialog(a fyne.App, w fyne.Window) dialog.Dialog {
+// networkOptions returns the network Select's option strings (All networks,
+// then Automatic, then each netpick candidate's label) plus a lookup from
+// label back to the interface name that should be persisted
+// (session.AllNetworksSentinel for All networks, "" for Automatic).
+func networkOptions() (options []string, nameByLabel map[string]string) {
+	cands := netpick.Candidates(net.Interfaces)
+
+	options = make([]string, 0, len(cands)+2)
+	options = append(options, allNetworksLabel, automaticLabel)
+	nameByLabel = map[string]string{
+		allNetworksLabel: session.AllNetworksSentinel,
+		automaticLabel:   "",
+	}
+
+	for _, c := range cands {
+		options = append(options, c.Label)
+		nameByLabel[c.Label] = c.Name
+	}
+
+	return options, nameByLabel
+}
+
+// labelForInterface returns the Select label that corresponds to iface
+// (an interface name as persisted in Settings), falling back to
+// automaticLabel when iface is empty or unrecognized (e.g. an interface
+// that has since disappeared).
+func labelForInterface(iface string) string {
+	if iface == session.AllNetworksSentinel {
+		return allNetworksLabel
+	}
+	if iface == "" {
+		return automaticLabel
+	}
+	cands := netpick.Candidates(net.Interfaces)
+	for _, c := range cands {
+		if c.Name == iface {
+			return c.Label
+		}
+	}
+	return automaticLabel
+}
+
+// NewSettingsDialog builds the "Settings…" dialog: Network and Port fields,
+// seeded from the current preferences, saving on confirm. restart, if
+// non-nil, is called with the newly persisted Settings after a successful
+// save so the caller can restart the session against the new network
+// choice; it is not called when validation fails or the user cancels.
+func NewSettingsDialog(a fyne.App, w fyne.Window, restart func(Settings)) dialog.Dialog {
 	current := LoadSettings(a)
 
-	ifaceEntry := widget.NewEntry()
-	ifaceEntry.SetText(current.Interface)
+	options, nameByLabel := networkOptions()
+
+	networkSelect := widget.NewSelect(options, nil)
+	networkSelect.SetSelected(labelForInterface(current.Interface))
 
 	portEntry := widget.NewEntry()
 	portEntry.SetText(strconv.Itoa(current.Port))
 	portEntry.Validator = validatePort
 
 	form := widget.NewForm(
-		widget.NewFormItem("Interface", ifaceEntry),
-		widget.NewFormItem("UDP Port", portEntry),
+		widget.NewFormItem("Network", networkSelect),
+		widget.NewFormItem("Port", portEntry),
 	)
 
 	return dialog.NewCustomConfirm("Settings…", "Save", "Cancel", form, func(ok bool) {
 		if !ok {
 			return
 		}
-		if err := trySaveSettings(a, ifaceEntry.Text, portEntry.Text); err != nil {
+		iface := nameByLabel[networkSelect.Selected]
+		if err := trySaveSettings(a, iface, portEntry.Text); err != nil {
 			dialog.ShowError(err, w)
 			return
+		}
+		if restart != nil {
+			restart(LoadSettings(a))
 		}
 	}, w)
 }
 
 // NewMainMenu builds the application main menu, including the "Settings…"
-// item that opens the settings dialog.
-func NewMainMenu(a fyne.App, w fyne.Window) *fyne.MainMenu {
+// item that opens the settings dialog. restart is forwarded to
+// NewSettingsDialog (see its doc comment).
+func NewMainMenu(a fyne.App, w fyne.Window, restart func(Settings)) *fyne.MainMenu {
 	settingsItem := fyne.NewMenuItem("Settings…", func() {
-		NewSettingsDialog(a, w).Show()
+		NewSettingsDialog(a, w, restart).Show()
 	})
 	fileMenu := fyne.NewMenu("File", settingsItem)
 	return fyne.NewMainMenu(fileMenu)

@@ -106,19 +106,61 @@ func TestDeviceStoreConcurrentUpserts(t *testing.T) {
 	}
 }
 
-func TestDeviceStoreSourceStaysLocalSim(t *testing.T) {
+func TestDeviceStoreSourceStaysSimulated(t *testing.T) {
 	s := NewDeviceStore()
 	key := DeviceKey{Instance: 1001, IP: "127.0.0.1"}
 
-	s.Upsert(DeviceRow{Key: key, Source: "local-sim"})
+	s.Upsert(DeviceRow{Key: key, Source: "simulated"})
 	s.Upsert(DeviceRow{Key: key, Source: "network"})
 
 	rows := s.Snapshot()
 	if len(rows) != 1 {
 		t.Fatalf("Snapshot() len = %d, want 1", len(rows))
 	}
-	if rows[0].Source != "local-sim" {
-		t.Errorf("Source = %q, want %q", rows[0].Source, "local-sim")
+	if rows[0].Source != "simulated" {
+		t.Errorf("Source = %q, want %q", rows[0].Source, "simulated")
+	}
+}
+
+// TestDeviceStoreNameSurvivesResightingWithoutName covers the Name merge
+// behavior: a simulated device's Name must not be wiped out when the same
+// key is later re-upserted (e.g. by a Who-Is sweep) with an empty Name.
+func TestDeviceStoreNameSurvivesResightingWithoutName(t *testing.T) {
+	s := NewDeviceStore()
+	key := DeviceKey{Instance: 1001, IP: "127.0.0.2"}
+
+	s.Upsert(DeviceRow{Key: key, Source: "simulated", Name: "Boiler"})
+	s.Upsert(DeviceRow{Key: key, Source: "network", VendorID: 5})
+
+	rows := s.Snapshot()
+	if len(rows) != 1 {
+		t.Fatalf("Snapshot() len = %d, want 1", len(rows))
+	}
+	if rows[0].Name != "Boiler" {
+		t.Errorf("Name = %q, want %q", rows[0].Name, "Boiler")
+	}
+	if rows[0].VendorID != 5 {
+		t.Errorf("VendorID = %d, want 5 (non-Name fields still overwrite)", rows[0].VendorID)
+	}
+}
+
+// TestDeviceStoreNameOverwritesWhenIncomingHasOne covers the other half of
+// the merge rule: an explicit incoming Name replaces whatever was there
+// before (Name only falls back to the existing value when the incoming one
+// is empty).
+func TestDeviceStoreNameOverwritesWhenIncomingHasOne(t *testing.T) {
+	s := NewDeviceStore()
+	key := DeviceKey{Instance: 1001, IP: "127.0.0.2"}
+
+	s.Upsert(DeviceRow{Key: key, Source: "simulated", Name: "Boiler"})
+	s.Upsert(DeviceRow{Key: key, Source: "simulated", Name: "Renamed Boiler"})
+
+	rows := s.Snapshot()
+	if len(rows) != 1 {
+		t.Fatalf("Snapshot() len = %d, want 1", len(rows))
+	}
+	if rows[0].Name != "Renamed Boiler" {
+		t.Errorf("Name = %q, want %q", rows[0].Name, "Renamed Boiler")
 	}
 }
 
