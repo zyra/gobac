@@ -16,14 +16,15 @@ import (
 	"github.com/zyra/gobac/gui/internal/ui"
 )
 
-// discoveryNavIndex, browserNavIndex, editorNavIndex, and quickstartNavIndex
-// are the AppShell nav indices of the Discovery, Object Browser, Simulator
-// Editor, and Quickstart views (see navLabels in internal/ui/shell.go).
+// discoveryNavIndex, browserNavIndex, and editorNavIndex are the AppShell
+// nav indices of the Discovery, Object Browser, and Simulator views (see
+// navLabels in internal/ui/shell.go). Task U3 folded the former Quickstart
+// view into the Simulator (editor) view, so there is no separate nav index
+// for it anymore.
 const (
-	discoveryNavIndex  = 0
-	browserNavIndex    = 1
-	editorNavIndex     = 2
-	quickstartNavIndex = 3
+	discoveryNavIndex = 0
+	browserNavIndex   = 1
+	editorNavIndex    = 2
 )
 
 // Compose builds the application shell and wires it to sess: window sizing
@@ -61,11 +62,13 @@ func Compose(a fyne.App, w fyne.Window, sess session.Session) *ui.AppShell {
 	browser := ui.NewBrowserView(sess, objects, shell)
 	shell.SetView(browserNavIndex, browser)
 
-	editor := ui.NewEditorView(shell)
+	editor := ui.NewEditorView(devices, shell)
 	shell.SetView(editorNavIndex, editor)
-
-	quickstart := ui.NewQuickstartView(devices, shell)
-	shell.SetView(quickstartNavIndex, quickstart)
+	if editorView, ok := editor.(*ui.EditorView); ok {
+		editorView.PortHint = func(ports []uint16) string {
+			return sessionPortHint(a, ports)
+		}
+	}
 
 	if discoveryView, ok := discovery.(*ui.DiscoveryView); ok {
 		if browserView, ok := browser.(*ui.BrowserView); ok {
@@ -93,6 +96,26 @@ func startSession(sess session.Session, shell *ui.AppShell, s ui.Settings) {
 		return
 	}
 	shell.SetStatus(fmt.Sprintf("Connected on %s (port %d)", label, s.Port))
+}
+
+// sessionPortHint implements EditorView.PortHint: it reports whether any of
+// a just-started simulation's ports matches the session's currently
+// configured port, and if not, returns a plain-language tip naming the
+// first running port so the user knows what to change Settings -> Port to
+// in order to reach these simulated devices through the Network Explorer
+// browser. Returns "" (no hint) when there is a match or no running
+// devices at all.
+func sessionPortHint(a fyne.App, ports []uint16) string {
+	if len(ports) == 0 {
+		return ""
+	}
+	settings := ui.LoadSettings(a)
+	for _, p := range ports {
+		if int(p) == settings.Port {
+			return ""
+		}
+	}
+	return fmt.Sprintf("Tip: set Settings → Port to %d to interact with these devices.", ports[0])
 }
 
 // interfaceLabel returns the human-friendly netpick label for iface (a

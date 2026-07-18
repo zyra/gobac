@@ -16,7 +16,7 @@ import (
 // discoveryColumns are the discovery table's column headers, in display
 // order.
 var discoveryColumns = []string{
-	"Instance", "Address", "Vendor ID", "Max APDU", "Segmentation", "Source", "Last seen",
+	"Instance", "Name", "Address", "Vendor ID", "Max APDU", "Segmentation", "Source", "Last seen",
 }
 
 // segmentationText maps types.Segmentation values (bacnet/types/segmentation.go)
@@ -26,6 +26,15 @@ var segmentationText = map[uint8]string{
 	1: "transmit",
 	2: "receive",
 	3: "none",
+}
+
+// sourceText maps store.DeviceRow.Source values to the plain-language
+// display text the Source column renders (task U3): "Simulated" for a
+// device injected by the Simulator view's Run controls, "Network" for a
+// real Who-Is sighting.
+var sourceText = map[string]string{
+	"simulated": "Simulated",
+	"network":   "Network",
 }
 
 // defaultSweepDuration is the pre-selected entry in the duration selector.
@@ -142,19 +151,24 @@ func (v *DiscoveryView) cellText(id widget.TableCellID) string {
 	case 0:
 		return fmt.Sprintf("%d", row.Key.Instance)
 	case 1:
-		return fmt.Sprintf("%s:%d", row.Key.IP, row.Port)
+		return row.Name
 	case 2:
-		return fmt.Sprintf("%d", row.VendorID)
+		return fmt.Sprintf("%s:%d", row.Key.IP, row.Port)
 	case 3:
-		return fmt.Sprintf("%d", row.MaxApdu)
+		return fmt.Sprintf("%d", row.VendorID)
 	case 4:
+		return fmt.Sprintf("%d", row.MaxApdu)
+	case 5:
 		if text, ok := segmentationText[row.Segmentation]; ok {
 			return text
 		}
 		return fmt.Sprintf("%d", row.Segmentation)
-	case 5:
-		return row.Source
 	case 6:
+		if text, ok := sourceText[row.Source]; ok {
+			return text
+		}
+		return row.Source
+	case 7:
 		return row.LastSeen.Format("15:04:05")
 	}
 	return ""

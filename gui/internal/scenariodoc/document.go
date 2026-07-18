@@ -65,6 +65,19 @@ func Load(path string) (*Document, error) {
 	return &Document{path: path, format: format, scenario: *scenario}, nil
 }
 
+// LoadBytes decodes a scenario from data (format rules match Load's file
+// extension mapping — pass "yaml" or "json" directly) into a new Document
+// with no destination path. Used to load a bundled scenario (e.g. the
+// Simulator view's example scenario) without first writing it to disk; the
+// returned Document is not dirty, exactly like one just opened with Load.
+func LoadBytes(data []byte, format string) (*Document, error) {
+	scenario, err := simulator.DecodeScenario(bytes.NewReader(data), format)
+	if err != nil {
+		return nil, err
+	}
+	return &Document{format: format, scenario: *scenario}, nil
+}
+
 // formatForPath derives a DecodeScenario/marshal format from a file
 // extension: the trimmed, lowercased extension (e.g. "yaml", "yml", "json",
 // or "" for an extensionless path) — mirroring cmd/gobac-sim/main.go.

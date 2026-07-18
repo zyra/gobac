@@ -10,14 +10,14 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-func TestNewAppShellNavigationHasFourLabeledItems(t *testing.T) {
+func TestNewAppShellNavigationHasThreeLabeledItems(t *testing.T) {
 	a := test.NewApp()
 	w := a.NewWindow("test")
 	defer w.Close()
 
 	shell := NewAppShell(a, w)
 
-	want := []string{"Discovery", "Object Browser", "Simulator Editor", "Quickstart"}
+	want := []string{"Discovery", "Object Browser", "Simulator"}
 
 	if got := len(navLabels); got != len(want) {
 		t.Fatalf("len(navLabels) = %d, want %d", got, len(want))
@@ -58,7 +58,7 @@ func TestSelectingNavIndexSwitchesVisibleContent(t *testing.T) {
 		t.Fatal("canvas capture is unchanged after selecting a different nav row")
 	}
 
-	if got, want := visibleLabelText(t, shell.Content), "Scenario editor"; got != want {
+	if got, want := visibleLabelText(t, shell.Content), "Simulator"; got != want {
 		t.Errorf("visible content = %q, want %q", got, want)
 	}
 

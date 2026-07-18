@@ -8,12 +8,14 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-// navLabels are the left-navigation entries, in display order.
-var navLabels = []string{"Discovery", "Object Browser", "Simulator Editor", "Quickstart"}
+// navLabels are the left-navigation entries, in display order. Task U3
+// folded the former Quickstart view into the Simulator (Simulator Editor)
+// view, leaving three entries.
+var navLabels = []string{"Discovery", "Object Browser", "Simulator"}
 
 // viewLabels are the placeholder center-content texts, one per navLabels
 // entry at the same index.
-var viewLabels = []string{"Discovery view", "Object browser", "Scenario editor", "Quickstart"}
+var viewLabels = []string{"Discovery view", "Object browser", "Simulator"}
 
 // AppShell is the top-level content for the GoBAC Workstation main window:
 // a left navigation list, a center content stack that switches per

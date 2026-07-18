@@ -100,6 +100,43 @@ func TestComposeReportsFailureStatusWhenStartFails(t *testing.T) {
 	}
 }
 
+// TestSessionPortHintMatchesRunningPortReturnsEmpty covers sessionPortHint's
+// no-hint case: the session's configured port already matches one of the
+// simulation's running ports, so no Settings tip is needed.
+func TestSessionPortHintMatchesRunningPortReturnsEmpty(t *testing.T) {
+	a := test.NewApp()
+	ui.SaveSettings(a, ui.Settings{Interface: "eno0", Port: 47902})
+
+	got := sessionPortHint(a, []uint16{47901, 47902})
+	if got != "" {
+		t.Errorf("sessionPortHint = %q, want \"\" (session port matches a running port)", got)
+	}
+}
+
+// TestSessionPortHintMismatchReturnsTipNamingFirstPort covers the actual
+// tip: no running port matches the session's configured port, so the hint
+// names the first running port.
+func TestSessionPortHintMismatchReturnsTipNamingFirstPort(t *testing.T) {
+	a := test.NewApp()
+	ui.SaveSettings(a, ui.Settings{Interface: "eno0", Port: 47808})
+
+	got := sessionPortHint(a, []uint16{47901, 47902})
+	want := "Tip: set Settings → Port to 47901 to interact with these devices."
+	if got != want {
+		t.Errorf("sessionPortHint = %q, want %q", got, want)
+	}
+}
+
+// TestSessionPortHintNoRunningDevicesReturnsEmpty covers the degenerate
+// zero-ports case (should never happen in practice — Run always injects at
+// least the devices it started — but must not panic or fabricate a tip).
+func TestSessionPortHintNoRunningDevicesReturnsEmpty(t *testing.T) {
+	a := test.NewApp()
+	if got := sessionPortHint(a, nil); got != "" {
+		t.Errorf("sessionPortHint(nil) = %q, want \"\"", got)
+	}
+}
+
 // TestComposedWindowRendersNonBlank exercises the exact composition main()
 // performs (via Compose) under the Fyne test driver and asserts on the
 // rendered pixels, not the container tree. Before AppShell became a proper

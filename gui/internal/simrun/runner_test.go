@@ -3,8 +3,8 @@ package simrun
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net"
-	"strings"
 	"testing"
 	"time"
 
@@ -183,7 +183,7 @@ func TestStartRejectsMultiIPScenario(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error for a multi-ip scenario, got nil")
 	}
-	if !strings.Contains(err.Error(), "quickstart requires multi-port loopback scenarios") {
-		t.Fatalf("error = %q, want it to contain %q", err.Error(), "quickstart requires multi-port loopback scenarios")
+	if !errors.Is(err, ErrUnsupportedScenario) {
+		t.Fatalf("error = %v, want it to wrap ErrUnsupportedScenario", err)
 	}
 }
