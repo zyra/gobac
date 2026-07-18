@@ -234,7 +234,7 @@ func (v *DiscoveryView) sweep() {
 		ch, err := v.sess.Discover(context.Background(), duration)
 		if err != nil {
 			fyne.Do(func() { v.sweepBtn.Enable() })
-			v.shell.SetStatus("sweep failed: " + err.Error())
+			v.shell.SetStatus("Couldn't scan the network — " + err.Error())
 			return
 		}
 

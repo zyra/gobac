@@ -1363,7 +1363,7 @@ func (v *EditorView) onRun() {
 			if errors.Is(err, simrun.ErrUnsupportedScenario) {
 				v.shell.SetStatus("Simulations run privately on this computer. Set the network mode to multi-port with loopback addresses (or use the example scenario).")
 			} else {
-				v.shell.SetStatus("simulation start failed: " + err.Error())
+				v.shell.SetStatus("Couldn't start the simulation — " + err.Error())
 			}
 			return
 		}
@@ -1503,7 +1503,7 @@ func (v *EditorView) onOpen() {
 		path := reader.URI().Path()
 		reader.Close()
 		if loadErr := v.openPath(path); loadErr != nil {
-			v.shell.SetStatus("open failed: " + loadErr.Error())
+			v.shell.SetStatus("Couldn't open that file — " + loadErr.Error())
 		}
 	}, win)
 	fd.SetFilter(storage.NewExtensionFileFilter([]string{".yaml", ".yml", ".json"}))
@@ -1516,7 +1516,7 @@ func (v *EditorView) onSave() {
 		return
 	}
 	if err := v.save(); err != nil {
-		v.shell.SetStatus("save failed: " + err.Error())
+		v.shell.SetStatus("Couldn't save that file — " + err.Error())
 	}
 }
 
@@ -1532,7 +1532,7 @@ func (v *EditorView) onSaveAs() {
 		path := writer.URI().Path()
 		writer.Close()
 		if saveErr := v.saveAs(path); saveErr != nil {
-			v.shell.SetStatus("save failed: " + saveErr.Error())
+			v.shell.SetStatus("Couldn't save that file — " + saveErr.Error())
 		}
 	}, win)
 	fd.SetFilter(storage.NewExtensionFileFilter([]string{".yaml", ".yml", ".json"}))
