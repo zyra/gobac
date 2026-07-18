@@ -10,12 +10,23 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/zyra/gobac/gui/internal/netpick"
+	"github.com/zyra/gobac/gui/internal/session"
 )
 
-// automaticLabel is the network Select's first option: choosing it persists
-// an empty Settings.Interface, which StartFromSettings resolves to the best
-// real interface at start time.
+// automaticLabel is the network Select's option that persists an empty
+// Settings.Interface, which StartFromSettings resolves to the best real
+// interface at start time. It keeps the "(recommended)" wording: unlike
+// allNetworksLabel's limited broadcast, Automatic's per-interface directed
+// broadcast is reliable on multi-homed hosts too (see task U5's risk note).
 const automaticLabel = "Automatic (recommended)"
+
+// allNetworksLabel is the network Select's first option: choosing it
+// persists session.AllNetworksSentinel, which StartFromSettings maps to the
+// bacnet library's wildcard listen/send (binds 0.0.0.0, Who-Is goes to the
+// limited broadcast address). It's listed without "(recommended)" because
+// limited broadcast isn't guaranteed to reach every attached network on a
+// multi-homed host the way Automatic's directed broadcast is.
+const allNetworksLabel = "All networks"
 
 // Preference keys under app.Preferences().
 const (
@@ -79,15 +90,19 @@ func trySaveSettings(a fyne.App, iface, portText string) error {
 	return nil
 }
 
-// networkOptions returns the network Select's option strings (Automatic
-// first, then each netpick candidate's label) plus a lookup from label back
-// to the interface name that should be persisted ("" for Automatic).
+// networkOptions returns the network Select's option strings (All networks,
+// then Automatic, then each netpick candidate's label) plus a lookup from
+// label back to the interface name that should be persisted
+// (session.AllNetworksSentinel for All networks, "" for Automatic).
 func networkOptions() (options []string, nameByLabel map[string]string) {
 	cands := netpick.Candidates(net.Interfaces)
 
-	options = make([]string, 0, len(cands)+1)
-	options = append(options, automaticLabel)
-	nameByLabel = map[string]string{automaticLabel: ""}
+	options = make([]string, 0, len(cands)+2)
+	options = append(options, allNetworksLabel, automaticLabel)
+	nameByLabel = map[string]string{
+		allNetworksLabel: session.AllNetworksSentinel,
+		automaticLabel:   "",
+	}
 
 	for _, c := range cands {
 		options = append(options, c.Label)
@@ -102,6 +117,9 @@ func networkOptions() (options []string, nameByLabel map[string]string) {
 // automaticLabel when iface is empty or unrecognized (e.g. an interface
 // that has since disappeared).
 func labelForInterface(iface string) string {
+	if iface == session.AllNetworksSentinel {
+		return allNetworksLabel
+	}
 	if iface == "" {
 		return automaticLabel
 	}

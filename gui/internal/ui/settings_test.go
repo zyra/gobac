@@ -6,6 +6,8 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
+
+	"github.com/zyra/gobac/gui/internal/session"
 )
 
 func TestValidatePortRejectsInvalidValues(t *testing.T) {
@@ -63,12 +65,13 @@ func TestTrySaveSettingsPersistsValidPort(t *testing.T) {
 	}
 }
 
-// TestNewSettingsDialogRendersAutomaticFirst renders the real dialog (not
-// just its constructor return value) under the Fyne test driver and reads
-// the actual rendered widget.Select: its first option must be "Automatic
-// (recommended)", and with no interface saved yet that must be the
-// pre-selected value too.
-func TestNewSettingsDialogRendersAutomaticFirst(t *testing.T) {
+// TestNewSettingsDialogRendersAllNetworksThenAutomaticFirst renders the real
+// dialog (not just its constructor return value) under the Fyne test driver
+// and reads the actual rendered widget.Select: its first two options must be
+// "All networks" then "Automatic (recommended)" (task U5 adds "All
+// networks" ahead of the existing Automatic entry), and with no interface
+// saved yet Automatic must be the pre-selected value.
+func TestNewSettingsDialogRendersAllNetworksThenAutomaticFirst(t *testing.T) {
 	a := test.NewApp()
 	w := a.NewWindow("t")
 	defer w.Close()
@@ -80,11 +83,67 @@ func TestNewSettingsDialogRendersAutomaticFirst(t *testing.T) {
 	if sel == nil {
 		t.Fatal("no widget.Select found in rendered settings dialog")
 	}
-	if len(sel.Options) == 0 || sel.Options[0] != automaticLabel {
-		t.Fatalf("Select.Options = %v, want first entry %q", sel.Options, automaticLabel)
+	if len(sel.Options) < 2 || sel.Options[0] != allNetworksLabel || sel.Options[1] != automaticLabel {
+		t.Fatalf("Select.Options = %v, want first two entries %q, %q", sel.Options, allNetworksLabel, automaticLabel)
 	}
 	if sel.Selected != automaticLabel {
 		t.Errorf("Select.Selected = %q, want %q (no interface saved yet)", sel.Selected, automaticLabel)
+	}
+}
+
+// TestNewSettingsDialogSelectingAllNetworksPersistsSentinelAndRestarts
+// drives the rendered Select to "All networks" and taps the real "Save"
+// button, asserting the outcome: the persisted Settings.Interface is
+// session.AllNetworksSentinel (never the display label), and the restart
+// callback receives the same value.
+func TestNewSettingsDialogSelectingAllNetworksPersistsSentinelAndRestarts(t *testing.T) {
+	a := test.NewApp()
+	w := a.NewWindow("t")
+	defer w.Close()
+	w.Resize(fyne.NewSize(400, 300))
+
+	var restarted Settings
+	restartCalls := 0
+	NewSettingsDialog(a, w, func(s Settings) {
+		restartCalls++
+		restarted = s
+	}).Show()
+
+	top := w.Canvas().Overlays().Top()
+
+	sel := findSelect(top)
+	if sel == nil {
+		t.Fatal("no widget.Select found in rendered settings dialog")
+	}
+	sel.SetSelected(allNetworksLabel)
+
+	save := findButton(top, "Save")
+	if save == nil {
+		t.Fatal("no \"Save\" button found in rendered settings dialog")
+	}
+	test.Tap(save)
+
+	if restartCalls != 1 {
+		t.Fatalf("restart called %d times, want 1", restartCalls)
+	}
+	if restarted.Interface != session.AllNetworksSentinel {
+		t.Errorf("restart Settings.Interface = %q, want %q", restarted.Interface, session.AllNetworksSentinel)
+	}
+
+	got := LoadSettings(a)
+	if got.Interface != session.AllNetworksSentinel {
+		t.Errorf("LoadSettings(a).Interface = %q, want %q", got.Interface, session.AllNetworksSentinel)
+	}
+}
+
+// TestLabelForInterfaceRoundTripsAllNetworksSentinel is a plain regression
+// check (no rendering needed -- labelForInterface has no Fyne dependency)
+// that persisting session.AllNetworksSentinel and reloading it displays the
+// "All networks" label rather than falling back to Automatic.
+func TestLabelForInterfaceRoundTripsAllNetworksSentinel(t *testing.T) {
+	got := labelForInterface(session.AllNetworksSentinel)
+	if got != allNetworksLabel {
+		t.Errorf("labelForInterface(%q) = %q, want %q", session.AllNetworksSentinel, got, allNetworksLabel)
 	}
 }
 

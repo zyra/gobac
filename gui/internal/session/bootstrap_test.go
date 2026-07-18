@@ -121,6 +121,26 @@ func TestStartFromSettingsPassesExplicitInterfaceUnchanged(t *testing.T) {
 	}
 }
 
+func TestStartFromSettingsMapsAllNetworksSentinelToWildcard(t *testing.T) {
+	withResolveAutomatic(t, func() (netpick.Candidate, bool) {
+		t.Fatal("resolveAutomatic called for the all-networks sentinel")
+		return netpick.Candidate{}, false
+	})
+	f := &fakeStarter{}
+
+	if err := StartFromSettings(f, AllNetworksSentinel, 47808); err != nil {
+		t.Fatalf("StartFromSettings: %v", err)
+	}
+
+	want := Config{Interface: "", Port: 47808, LocalPort: 47808}
+	if f.startCfg != want {
+		t.Errorf("Start called with %+v, want %+v", f.startCfg, want)
+	}
+	if f.startCalls != 1 {
+		t.Errorf("Start called %d times, want 1", f.startCalls)
+	}
+}
+
 func TestShutdownStopsStarter(t *testing.T) {
 	f := &fakeStarter{}
 

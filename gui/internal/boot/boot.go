@@ -199,12 +199,16 @@ func sessionPortHint(a fyne.App, ports []uint16) string {
 }
 
 // interfaceLabel returns the human-friendly netpick label for iface (a
-// Settings.Interface value): the Automatic pick's label when iface is
-// empty, or the matching candidate's label for a named interface. It falls
-// back to "Automatic" or the raw name when netpick has nothing to say
-// (e.g. no usable interface, or one that has since disappeared) so the
-// status bar always has something plain to show.
+// Settings.Interface value): "All networks" for session.AllNetworksSentinel,
+// the Automatic pick's label when iface is empty, or the matching
+// candidate's label for a named interface. It falls back to "Automatic" or
+// the raw name when netpick has nothing to say (e.g. no usable interface,
+// or one that has since disappeared) so the status bar always has
+// something plain to show.
 func interfaceLabel(iface string) string {
+	if iface == session.AllNetworksSentinel {
+		return "All networks"
+	}
 	cands := netpick.Candidates(net.Interfaces)
 	if iface == "" {
 		if c, ok := netpick.Automatic(cands); ok {
