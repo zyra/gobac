@@ -150,12 +150,22 @@ func TestSessionPortHintNoRunningDevicesReturnsEmpty(t *testing.T) {
 // captured canvas was a solid blank image (1-2 distinct colors). This test
 // fails immediately if CreateRenderer is removed or SetContent stops being
 // handed a real widget.
+//
+// It also guards against a second, subtler rendered-launch regression: the
+// nav rail clipping its own labels ("Network Explorer" painting as "Net").
+// That happened because the nav List's item template was an empty-string
+// label, and Fyne's List caches its per-row min size from that template's
+// first render and never revisits it -- see ui/shell.go's widestNavLabel.
+// The assertions below check both ends of that bug: the rail itself must
+// be wide enough for the widest label's natural size, and every rendered
+// nav row label must actually be given at least its own MinSize width (not
+// squeezed narrower by a stale cached item size).
 func TestComposedWindowRendersNonBlank(t *testing.T) {
 	a := test.NewApp()
 	w := a.NewWindow("t")
 	defer w.Close()
 
-	Compose(a, w, fakeSession{})
+	shell := Compose(a, w, fakeSession{})
 	w.Resize(fyne.NewSize(1100, 700))
 
 	img := w.Canvas().Capture()
@@ -173,6 +183,60 @@ func TestComposedWindowRendersNonBlank(t *testing.T) {
 	if contentColors <= 1 {
 		t.Fatalf("captured content region has %d distinct colors, want > 1", contentColors)
 	}
+
+	// "Network Explorer" is the longest entry in ui.navLabels (see
+	// ui/shell.go); the rendered nav rail must be at least as wide as a
+	// label containing it, or the nav column is collapsing again.
+	wantWidth := widget.NewLabel("Network Explorer").MinSize().Width
+	if got := shell.Nav.Size().Width; got < wantWidth {
+		t.Fatalf("nav rail width = %v, want >= %v (MinSize of the longest nav label, %q)", got, wantWidth, "Network Explorer")
+	}
+
+	// Belt-and-suspenders: every actual rendered nav row label must be
+	// sized at least to its own text's MinSize -- otherwise the rail could
+	// pass the width check above yet still squeeze an individual row's
+	// label into a clipped width.
+	labels := collectLabels(test.WidgetRenderer(shell.Nav))
+	if len(labels) == 0 {
+		t.Fatal("no rendered *widget.Label found inside the nav list")
+	}
+	for _, lbl := range labels {
+		if got, want := lbl.Size().Width, lbl.MinSize().Width; got < want {
+			t.Errorf("nav row label %q rendered width = %v, want >= %v (its own MinSize)", lbl.Text, got, want)
+		}
+	}
+}
+
+// collectLabels walks obj's rendered object tree -- recursing through
+// *fyne.Container children and, for any other fyne.Widget, through its own
+// renderer's Objects() -- and returns every *widget.Label found. This
+// reaches into a widget.List's internally-managed row objects the same way
+// the test driver does, without depending on any unexported List internals.
+func collectLabels(r fyne.WidgetRenderer) []*widget.Label {
+	var out []*widget.Label
+	var walk func(fyne.CanvasObject)
+	walk = func(o fyne.CanvasObject) {
+		switch v := o.(type) {
+		case *widget.Label:
+			out = append(out, v)
+		case *fyne.Container:
+			for _, c := range v.Objects {
+				walk(c)
+			}
+		case fyne.Widget:
+			walk2 := test.WidgetRenderer(v)
+			if walk2 == nil {
+				return
+			}
+			for _, c := range walk2.Objects() {
+				walk(c)
+			}
+		}
+	}
+	for _, o := range r.Objects() {
+		walk(o)
+	}
+	return out
 }
 
 // TestComposedWindowShowsNavAndStatus drives the real, composed canvas:

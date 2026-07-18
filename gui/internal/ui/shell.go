@@ -54,9 +54,20 @@ func NewAppShell(a fyne.App, w fyne.Window) *AppShell {
 	shell.Content = container.NewStack(views...)
 	shell.selectView(0)
 
+	// The List widget creates one item via CreateItem to measure and cache
+	// its per-row minimum size (itemMin), and never recomputes it
+	// afterward -- see fyne.io/fyne/v2/widget.List.Resize/updateItem. An
+	// empty-string template therefore locks the whole list (and the
+	// bordered nav rail built from it) to a near-zero width for its
+	// entire life, regardless of the real text updateNavItem later fills
+	// in: rows still render their real label text, but squeezed into that
+	// tiny cached width, so "Network Explorer" paints as "Net". Seeding
+	// the template with the widest actual nav label makes the cached
+	// itemMin -- and so the rail's natural width -- match the widest row
+	// up front.
 	shell.Nav = widget.NewList(
 		func() int { return len(navLabels) },
-		func() fyne.CanvasObject { return widget.NewLabel("") },
+		func() fyne.CanvasObject { return widget.NewLabel(widestNavLabel()) },
 		updateNavItem,
 	)
 	shell.Nav.OnSelected = func(id widget.ListItemID) {
@@ -80,6 +91,22 @@ func (s *AppShell) CreateRenderer() fyne.WidgetRenderer {
 // by the List's CreateItem callback.
 func updateNavItem(id widget.ListItemID, obj fyne.CanvasObject) {
 	obj.(*widget.Label).SetText(navLabels[id])
+}
+
+// widestNavLabel returns the entry in navLabels that a *widget.Label
+// measures widest, by rendered MinSize rather than character count, so it
+// stays correct regardless of which characters the widest string actually
+// contains.
+func widestNavLabel() string {
+	widest := navLabels[0]
+	widestW := widget.NewLabel(widest).MinSize().Width
+	for _, l := range navLabels[1:] {
+		if w := widget.NewLabel(l).MinSize().Width; w > widestW {
+			widest = l
+			widestW = w
+		}
+	}
+	return widest
 }
 
 // selectView shows the content view at index id and hides all others.
