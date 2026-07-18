@@ -272,12 +272,17 @@ jobs:
           # exists, matching the build step below.
           PY="$(command -v python3 || command -v python)"
 
-          dest="$(mktemp -d)"
+          # Extract under RUNNER_TEMP (stable for the whole job) and write
+          # the Windows-native path form to GITHUB_PATH: cgo resolves CC via
+          # %PATH%, which ignores the POSIX-style paths Git Bash produces
+          # (this is why the v2.2.0 run could not find the compiler).
+          dest="${RUNNER_TEMP}/llvm-mingw"
+          mkdir -p "${dest}"
           "${PY}" -m zipfile -e "${LLVM_MINGW_ASSET}" "${dest}"
           rm -f "${LLVM_MINGW_ASSET}"
 
           toolchain_root="${dest}/${LLVM_MINGW_ASSET%.zip}"
-          echo "${toolchain_root}/bin" >> "$GITHUB_PATH"
+          cygpath -w "${toolchain_root}/bin" >> "$GITHUB_PATH"
           echo "CC=aarch64-w64-mingw32-clang" >> "$GITHUB_ENV"
           echo "CXX=aarch64-w64-mingw32-clang++" >> "$GITHUB_ENV"
 
