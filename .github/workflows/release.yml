@@ -4,12 +4,28 @@ on:
   push:
     tags:
       - "v2.*"
+  # Re-publish GUI release assets for a tag that was already published,
+  # without cutting a new tag. This exists because the gui-release matrix
+  # legs build on native per-OS/arch runners and can fail independently of
+  # the CLI release (see the windows-11-arm leg's toolchain step below);
+  # this lets that single leg be retried against an existing release.
+  # Only gui-validate and gui-release run here -- validate and release
+  # (the CLI build) are guarded to skip via `if: github.event_name !=
+  # 'workflow_dispatch'` below, since the GitHub release for `tag` must
+  # already exist and this must not create/mutate it.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to re-publish GUI assets for (e.g. v2.1.1)"
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 jobs:
   validate:
+    if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -38,6 +54,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -57,6 +75,7 @@ jobs:
 
   release:
     needs: validate
+    if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -166,6 +185,21 @@ jobs:
   # independently without re-uploading everything.
   gui-release:
     needs: [release, gui-validate]
+    # On a tag push, `release` must have succeeded for this to run (same
+    # as before this condition was added explicitly). On workflow_dispatch,
+    # `release` is skipped by design (see the trigger comment above), and a
+    # skipped `needs` job would otherwise cause this job to be skipped too
+    # -- so a skipped `release` is accepted as well, but a genuine failure
+    # of either needed job still blocks this one.
+    if: |
+      always() &&
+      needs.gui-validate.result == 'success' &&
+      (needs.release.result == 'success' || needs.release.result == 'skipped')
+    env:
+      # On a tag push this is identical to GITHUB_REF_NAME (the tag).
+      # On workflow_dispatch there is no triggering tag ref, so the tag
+      # to re-publish assets for comes from the `tag` input instead.
+      REF_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
     defaults:
       run:
         # Every run step in this job must use bash: the default shell on
@@ -200,6 +234,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -209,6 +245,41 @@ jobs:
       - name: Install Fyne build dependencies
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev
+
+      # windows-11-arm's default gcc is an x86 cross tool that cannot
+      # assemble arm64 code (fails with e.g. "no such instruction:
+      # stp x29,x30"), so CGO -- required by Fyne -- needs a real aarch64
+      # toolchain here. llvm-mingw ships a clang/lld toolchain that runs
+      # natively on this arm64 runner and targets aarch64-w64-mingw32.
+      # Pinned to a specific release (not "latest") with a verified
+      # sha256 so this leg stays reproducible across future runs; bump
+      # both together to upgrade.
+      - name: Install arm64 mingw toolchain (windows-11-arm)
+        if: matrix.runner == 'windows-11-arm'
+        env:
+          LLVM_MINGW_VERSION: "20260616"
+          LLVM_MINGW_ASSET: "llvm-mingw-20260616-ucrt-aarch64.zip"
+          LLVM_MINGW_SHA256: "312593669435bd0bfc1a43ac3fba23c8b27e0610bade88b2738e5a01702a99ba"
+        run: |
+          set -euo pipefail
+
+          url="https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM_MINGW_VERSION}/${LLVM_MINGW_ASSET}"
+          curl -sSL -o "${LLVM_MINGW_ASSET}" "${url}"
+          echo "${LLVM_MINGW_SHA256}  ${LLVM_MINGW_ASSET}" | sha256sum -c -
+
+          # The Windows runner images expose only `python` on PATH, not
+          # `python3` (actions/runner-images#2461); resolve whichever
+          # exists, matching the build step below.
+          PY="$(command -v python3 || command -v python)"
+
+          dest="$(mktemp -d)"
+          "${PY}" -m zipfile -e "${LLVM_MINGW_ASSET}" "${dest}"
+          rm -f "${LLVM_MINGW_ASSET}"
+
+          toolchain_root="${dest}/${LLVM_MINGW_ASSET%.zip}"
+          echo "${toolchain_root}/bin" >> "$GITHUB_PATH"
+          echo "CC=aarch64-w64-mingw32-clang" >> "$GITHUB_ENV"
+          echo "CXX=aarch64-w64-mingw32-clang++" >> "$GITHUB_ENV"
 
       - name: Build and package GUI release asset
         shell: bash
@@ -223,7 +294,7 @@ jobs:
           # macOS images have `python3`, so resolve whichever exists.
           PY="$(command -v python3 || command -v python)"
 
-          asset="gobac-gui-${GITHUB_REF_NAME}-${GOOS}-${GOARCH}"
+          asset="gobac-gui-${REF_NAME}-${GOOS}-${GOARCH}"
           stage="$(mktemp -d)"
           package="${stage}/${asset}"
           binary="gobac-gui"
@@ -266,4 +337,4 @@ jobs:
         run: |
           set -euo pipefail
 
-          gh release upload "${GITHUB_REF_NAME}" dist/* --clobber
+          gh release upload "${REF_NAME}" dist/* --clobber
