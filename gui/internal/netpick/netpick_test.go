@@ -172,3 +172,96 @@ func TestAutomaticReturnsFalseWhenEmpty(t *testing.T) {
 		t.Error("Automatic(nil) ok = true, want false")
 	}
 }
+
+func TestIsVirtualMatchesCommonVirtualPrefixes(t *testing.T) {
+	virtual := []string{
+		"docker0", "br-4a3b2c1d", "veth1234", "virbr0",
+		"cni0", "flannel.1", "tailscale0", "tun0", "tap0", "wg0", "zt7nnq",
+	}
+	for _, name := range virtual {
+		if !isVirtual(name) {
+			t.Errorf("isVirtual(%q) = false, want true", name)
+		}
+	}
+
+	physical := []string{"eno0", "eth0", "wlan0", "en0", "lo"}
+	for _, name := range physical {
+		if isVirtual(name) {
+			t.Errorf("isVirtual(%q) = true, want false", name)
+		}
+	}
+}
+
+// TestSortCandidatesRanksPhysicalBeforeVirtual covers finding 2: a docker
+// bridge sorts alphabetically before most real NIC names ("br-..." <
+// "eno0"), so without ranking by Virtual it would beat the real LAN
+// interface for both display order and Automatic's pick. Physical
+// interfaces must sort first among non-loopback candidates regardless of
+// name.
+func TestSortCandidatesRanksPhysicalBeforeVirtual(t *testing.T) {
+	cands := []Candidate{
+		{Name: "br-4a3b2c1d", Virtual: true},
+		{Name: "docker0", Virtual: true},
+		{Name: "eno0"},
+		{Name: "lo", Loopback: true},
+	}
+
+	sortCandidates(cands)
+
+	want := []string{"eno0", "br-4a3b2c1d", "docker0", "lo"}
+	if got := namesOf(cands); !equalStrings(got, want) {
+		t.Fatalf("sortCandidates order = %v, want %v", got, want)
+	}
+}
+
+// TestAutomaticPrefersPhysicalOverVirtual covers finding 2's main claim:
+// with both a docker bridge and a real NIC present, Automatic must resolve
+// to the physical candidate even when the virtual one sorts first
+// alphabetically.
+func TestAutomaticPrefersPhysicalOverVirtual(t *testing.T) {
+	cands := []Candidate{
+		{Name: "br-4a3b2c1d", Virtual: true},
+		{Name: "docker0", Virtual: true},
+		{Name: "eno0"},
+	}
+	sortCandidates(cands)
+
+	got, ok := Automatic(cands)
+	if !ok {
+		t.Fatal("Automatic returned ok = false, want true")
+	}
+	if got.Name != "eno0" {
+		t.Errorf("Automatic = %+v, want eno0", got)
+	}
+}
+
+// TestAutomaticFallsBackToVirtualWhenOnlyVirtualPresent covers a
+// docker-only host: no physical NIC exists, so Automatic must still
+// resolve to the (virtual) non-loopback candidate rather than skipping
+// straight to loopback or failing.
+func TestAutomaticFallsBackToVirtualWhenOnlyVirtualPresent(t *testing.T) {
+	cands := []Candidate{
+		{Name: "lo", Loopback: true},
+		{Name: "docker0", Virtual: true},
+	}
+
+	got, ok := Automatic(cands)
+	if !ok {
+		t.Fatal("Automatic returned ok = false, want true")
+	}
+	if got.Name != "docker0" {
+		t.Errorf("Automatic = %+v, want docker0", got)
+	}
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}

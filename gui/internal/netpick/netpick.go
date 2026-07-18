@@ -26,6 +26,35 @@ type Candidate struct {
 	// Loopback reports whether this is a loopback interface (used by the
 	// simulator, so it's listed rather than filtered out).
 	Loopback bool
+	// Virtual reports whether Name matches a common virtual/container
+	// interface prefix (docker bridges, veth pairs, VPN tunnels, etc). It
+	// doesn't affect availability in the dropdown -- these are still real,
+	// selectable candidates -- only ranking: Automatic and the sorted
+	// candidate list both prefer a physical NIC when one is present, so a
+	// docker0 bridge never silently wins over the machine's real LAN
+	// interface just because its name sorts first alphabetically.
+	Virtual bool
+}
+
+// virtualPrefixes are OS interface name prefixes that commonly identify a
+// virtual, container, or tunnel interface rather than a physical NIC:
+// Docker/container bridges and veth pairs, libvirt's virbr, CNI/Flannel
+// pod networking, Tailscale/WireGuard/generic tun-tap VPN interfaces, and
+// ZeroTier. Matching one of these only affects ranking (see
+// Candidate.Virtual) -- it never excludes the interface from the list.
+var virtualPrefixes = []string{
+	"docker", "br-", "veth", "virbr", "cni", "flannel",
+	"tailscale", "tun", "tap", "wg", "zt",
+}
+
+// isVirtual reports whether name matches one of virtualPrefixes.
+func isVirtual(name string) bool {
+	for _, p := range virtualPrefixes {
+		if strings.HasPrefix(name, p) {
+			return true
+		}
+	}
+	return false
 }
 
 // Candidates lists the usable network interfaces: those reported up by
@@ -58,6 +87,7 @@ func Candidates(list func() ([]net.Interface, error)) []Candidate {
 			Label:    label(ifc.Name, ipv4, loopback),
 			IPv4:     ipv4,
 			Loopback: loopback,
+			Virtual:  isVirtual(ifc.Name),
 		})
 	}
 
@@ -66,20 +96,36 @@ func Candidates(list func() ([]net.Interface, error)) []Candidate {
 	return out
 }
 
-// sortCandidates orders cands non-loopback first, then by name, in place.
+// sortCandidates orders cands non-loopback first, then physical (non-
+// virtual) interfaces before virtual ones, then by name, in place. This
+// keeps every candidate available and visible in the dropdown -- it only
+// controls display/pick order, so a docker0 bridge still ranks below the
+// real LAN NIC it would otherwise beat alphabetically.
 func sortCandidates(cands []Candidate) {
 	sort.SliceStable(cands, func(i, j int) bool {
 		if cands[i].Loopback != cands[j].Loopback {
 			return !cands[i].Loopback
+		}
+		if cands[i].Virtual != cands[j].Virtual {
+			return !cands[i].Virtual
 		}
 		return cands[i].Name < cands[j].Name
 	})
 }
 
 // Automatic picks the candidate the GUI should use when the user has not
-// chosen one explicitly: the first non-loopback candidate, falling back to
-// the first loopback candidate, and reporting false when cands is empty.
+// chosen one explicitly: the first physical (non-loopback, non-virtual)
+// candidate, falling back to the first non-loopback candidate (which may
+// be virtual, e.g. a docker-only host), then the first loopback candidate,
+// and reporting false when cands is empty. This ranks a real LAN NIC ahead
+// of docker/bridge/tunnel interfaces without ever hiding the latter from
+// the dropdown -- see Candidate.Virtual.
 func Automatic(cands []Candidate) (Candidate, bool) {
+	for _, c := range cands {
+		if !c.Loopback && !c.Virtual {
+			return c, true
+		}
+	}
 	for _, c := range cands {
 		if !c.Loopback {
 			return c, true
